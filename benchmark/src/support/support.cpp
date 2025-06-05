@@ -131,3 +131,123 @@ std::unique_ptr<uint32_t[][3]> get_all_grids(uint32_t gridX, uint32_t gridY,
   }
   return grids;
 }
+
+
+bool readLabels(const char* filename, long* data, int M) {
+    if (!data) {
+        printf("ERROR (readLabels): Null pointer provided for data buffer.\n");
+        return false;
+    }
+    FILE* file = fopen(filename, "r");
+    if (!file) {
+        printf("ERROR (readLabels): Cannot open file %s for reading.\n", filename);
+        return false;
+    }
+
+    printf("INFO (readLabels): Reading %d labels from %s...\n", M, filename);
+    for (int i = 0; i < M; i++) {
+        // Use %ld format specifier for long integers
+        if (fscanf(file, "%ld", &data[i]) != 1) {
+            printf("ERROR (readLabels): Failed to read label at index %d from %s.\n", i, filename);
+            fclose(file);
+            return false;
+        }
+    }
+
+    // Optional: Check for extra data
+    long temp;
+    if (fscanf(file, "%ld", &temp) == 1) {
+         printf("Warning (readLabels): Extra data found in file %s.\n", filename);
+    }
+
+
+    fclose(file);
+    printf("INFO (readLabels): Successfully read %d labels.\n", M);
+    return true;
+}
+
+bool writeLabels(const char* filename, const long* data, int M) {
+     if (!data) {
+        printf("ERROR (writeLabels): Null pointer provided for data buffer.\n");
+        return false;
+    }
+    FILE* file = fopen(filename, "w");
+    if (!file) {
+        printf("ERROR (writeLabels): Cannot open file %s for writing.\n", filename);
+        return false;
+    }
+
+    printf("INFO (writeLabels): Writing %d labels to %s...\n", M, filename);
+    for (int i = 0; i < M; i++) {
+        // Use %ld format specifier for long integers, add newline
+        if (fprintf(file, "%ld\n", data[i]) < 0) {
+             printf("ERROR (writeLabels): Failed to write label at index %d to %s.\n", i, filename);
+             fclose(file);
+             return false;
+        }
+    }
+
+    fclose(file);
+     printf("INFO (writeLabels): Successfully wrote %d labels.\n", M);
+    return true;
+}
+
+
+bool readLoss(const char* filename, float* data, int M) {
+     if (!data) {
+        printf("ERROR (readLoss): Null pointer provided for data buffer.\n");
+        return false;
+    }
+    FILE* file = fopen(filename, "r");
+    if (!file) {
+        printf("ERROR (readLoss): Cannot open file %s for reading.\n", filename);
+        return false;
+    }
+
+    printf("INFO (readLoss): Reading %d loss values from %s...\n", M, filename);
+    for (int i = 0; i < M; i++) {
+        // Use %f format specifier for floats
+        if (fscanf(file, "%f", &data[i]) != 1) {
+            printf("ERROR (readLoss): Failed to read loss value at index %d from %s.\n", i, filename);
+            fclose(file);
+            return false;
+        }
+    }
+
+    // Optional: Check for extra data
+    float temp;
+    if (fscanf(file, "%f", &temp) == 1) {
+         printf("Warning (readLoss): Extra data found in file %s.\n", filename);
+    }
+
+    fclose(file);
+    printf("INFO (readLoss): Successfully read %d loss values.\n", M);
+    return true;
+}
+
+
+bool writeLoss(const char* filename, const float* data, int M) {
+    if (!data) {
+        printf("ERROR (writeLoss): Null pointer provided for data buffer.\n");
+        return false;
+    }
+    FILE* file = fopen(filename, "w");
+    if (!file) {
+        printf("ERROR (writeLoss): Cannot open file %s for writing.\n", filename);
+        return false;
+    }
+
+    printf("INFO (writeLoss): Writing %d loss values to %s...\n", M, filename);
+    for (int i = 0; i < M; i++) {
+        // Use %f or %g format specifier for floats, add newline
+        if (fprintf(file, "%.8f\n", data[i]) < 0) { // %.8f for reasonable precision
+             printf("ERROR (writeLoss): Failed to write loss value at index %d to %s.\n", i, filename);
+             fclose(file);
+             return false;
+        }
+    }
+
+    fclose(file);
+    printf("INFO (writeLoss): Successfully wrote %d loss values.\n", M);
+    return true;
+}

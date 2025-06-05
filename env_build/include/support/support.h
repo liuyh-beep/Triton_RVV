@@ -54,3 +54,43 @@ bool writeMatrix(const char* filename, const float* data, int rows, int cols);
 
 const std::string TRITON_KERNEL = "Triton Kernel";
 const std::string C_KERNEL = "C Kernel";
+
+/**
+ * @brief Reads a 1D array of long integers (labels) from a text file.
+ * Assumes one label per line.
+ * @param filename Path to the input file.
+ * @param data Pointer to the pre-allocated array to store labels.
+ * @param M Number of labels to read (size of the array).
+ * @return true if reading was successful, false otherwise.
+ */
+ bool readLabels(const char* filename, long* data, int M);
+
+ /**
+  * @brief Writes a 1D array of long integers (labels) to a text file.
+  * Writes one label per line.
+  * @param filename Path to the output file.
+  * @param data Pointer to the array containing labels.
+  * @param M Number of labels to write (size of the array).
+  * @return true if writing was successful, false otherwise.
+  */
+ bool writeLabels(const char* filename, const long* data, int M);
+ 
+ /**
+  * @brief Reads a 1D array of floats (e.g., loss) from a text file.
+  * Assumes one float value per line.
+  * @param filename Path to the input file.
+  * @param data Pointer to the pre-allocated array to store floats.
+  * @param M Number of floats to read (size of the array).
+  * @return true if reading was successful, false otherwise.
+  */
+ bool readLoss(const char* filename, float* data, int M);
+ 
+ /**
+  * @brief Writes a 1D array of floats (e.g., loss) to a text file.
+  * Writes one float value per line.
+  * @param filename Path to the output file.
+  * @param data Pointer to the array containing floats.
+  * @param M Number of floats to write (size of the array).
+  * @return true if writing was successful, false otherwise.
+  */
+ bool writeLoss(const char* filename, const float* data, int M);

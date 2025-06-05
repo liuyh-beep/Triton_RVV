@@ -84,5 +84,30 @@
         "opt": "O2",
         "dynamic": false,
         "_mode": "accuracy"
+    },
+    "flash_attention_fwd.py": {
+        "debug": true,
+        "vectorize": true,
+        "VLEN": 256,
+        "opt": "O2",
+        "dynamic": false,
+        "_mode": "accuracy",
+        "copy2Gem5": false,
+        "remote": {
+            "enable": false,
+            "user": "yuhao",
+            "host": "10.32.44.164",
+            "dir": "/home/yuhao/triton_riscv_test/triton",
+            "_descri": "The dir would be extended to {dir}/auto-tuner",
+            "socket": "/tmp/ssh_ctrl_socket"
+        }
+    },
+    "flash_attention_fwd.cpp": {
+        "blk": [64, 64, 64], 
+        "vectorize": true,
+        "vector_bits": 256,
+        "opt": "O3",
+        "dynamic": false,
+        "mode": "accuracy"
     }
 }

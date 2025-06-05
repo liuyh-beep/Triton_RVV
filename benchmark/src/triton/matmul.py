@@ -142,7 +142,6 @@ def matmul_kernel(
 
 
 # Triton Benchmark
-# We may need to fix the total size of block but adjust different dimensions
 def get_matmul_kernel_autotune_config(num_threads=0):
     configs = []
     
