@@ -1,0 +1,88 @@
+{
+    "matmul.py": {
+        "debug": true,
+        "vectorize": true,
+        "VLEN": 256,
+        "opt": "O2",
+        "dynamic": false,
+        "mode": "accuracy",
+        "copy2Gem5": false,
+        "remote": {
+            "enable": false,
+            "user": "yuhao",
+            "host": "10.32.44.164",
+            "dir": "/home/yuhao/triton_riscv_test/triton",
+            "_descri": "The dir would be extended to {dir}/auto-tuner",
+            "socket": "/tmp/ssh_ctrl_socket"
+        }
+    },
+    "_matmul.cpp": {
+        "blk": [
+            32,
+            32,
+            32
+        ],
+        "debug": true,
+        "vectorize": true,
+        "VLEN": 256,
+        "opt": "O2",
+        "_mode": "accuracy",
+        "dynamic": false,
+        "remote": {
+            "enable": true,
+            "user": "yuhao",
+            "host": "10.32.44.164",
+            "_dir": "/home/yuhao/triton_riscv_test/triton",
+            "socket": "/tmp/ssh_ctrl_socket"
+
+        }
+    },
+    "cross_entropy.py": {
+        "blk": [1, 256, 1], 
+        "vectorize": true,     
+        "vector_bits": 256,
+        "opt": "O2",
+        "dynamic": false,
+        "_mode": "accuracy"
+    },
+    "cross_entropy.cpp": {
+        "blk": [1, 256, 1],                     
+        "vectorize": true,        
+        "vector_bits": 256,       
+        "opt": "O2",              
+        "dynamic": false,         
+        "_mode": "accuracy"
+    },
+    "softmax.py": {
+        "blk": [1, 256, 1],
+        "vectorize": true,
+        "vector_bits": 256,
+        "opt": "O2",
+        "dynamic": false,
+        "mode": "accuracy"
+    },
+    "softmax.cpp": {
+        "blk": [1, 256, 1],
+        "vectorize": true,
+        "vector_bits": 256,
+        "opt": "O2",
+        "dynamic": false,
+        "mode": "accuracy"
+    },
+    "layer_norm.py": {
+        "blk": [1, 256, 1], 
+        "vectorize": true,    
+        "vector_bits": 256,   
+        "opt": "O2",
+        "dynamic": false,
+        "_mode": "accuracy"
+    },
+    "layer_norm.cpp": {
+        "blk": [1, 256, 2], 
+        "vectorize": true,
+        "vector_bits": 256,
+        "opt": "O2",
+        "dynamic": false,
+        "_mode": "accuracy"
+    }
+}

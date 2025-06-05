@@ -171,10 +171,16 @@ class BuildConfig:
             else:
                 print(f"Directory does not exist: {directory}")
 
+        # Check if auto-tuner directories are initialized
+        if hasattr(self, 'kernel_dump_dir') and self.kernel_dump_dir is not None:
+            remove_dir_contents(self.kernel_dump_dir)
+        if hasattr(self, 'kernel_bin_dir') and self.kernel_bin_dir is not None:
+            remove_dir_contents(self.kernel_bin_dir)
+
+        # Always clean these directories
         remove_dir_contents(self.bin_dir)
+        remove_dir_contents(self.lib_dir)
         remove_dir_contents(self.obj_dir)
-        remove_dir_contents(self.kernel_dump_dir)
-        remove_dir_contents(self.kernel_bin_dir)
 
 
 
@@ -669,7 +675,7 @@ def build_final_executable(config: BuildConfig) -> None:
     # Build executable with CHECK_ACCURACY enabled
     run_command(
         f"{config.clangpp} {main} -I {config.build_dir}/../../env_build/include "
-        f"-I {config.kernel_launcher_include_dir} -L {config.lib_dir} "
+        f"-I {config.kernel_launcher_include_dir} -L {config.lib_dir} -L {config.build_dir}/../../env_build/sysroot/lib "
         f"-l{config.lib_name} -lsupport -latomic -lsleef -std=c++17 "
         f"-D{config.kernel_enable} -DCHECK_ACCURACY -fPIC -o {out_file}"
     )
