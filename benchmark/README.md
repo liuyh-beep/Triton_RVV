@@ -156,6 +156,8 @@ The `shell/build_kernel.py` would not transfer any directory by default due to p
 
 ## Laptop side
 
+Firstly, please copy `report_to_host.py` and `run_perf.py` to `auto-tuner` directory of laptop.
+
 After receiving `auto-tuner/{kernel_name}/run`, we can run `auto-tuner/run_perf.py` to get perf data(usage: `python3 run_perf.py {kernel_name}/configs.json`), and it would produce a csv under `auto-tuner/{kernel_name}/run/perf/perf_stats.csv` on our laptop. And that csv file would record the kernel running time, some perf events(i.e. micro operations, cache, vector instructions) and perf record for L2 cache events. Also, `auto-tuner/run_perf.py` would not transfer this csv to host by default due to possible long running time, and we can use `auto-tuner/report_to_host.py` to copy that csv to host, usage: `python3 auto-tuner/transfer_to_remote.py <kernel_name>`.
 
 
