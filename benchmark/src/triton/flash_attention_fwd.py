@@ -159,8 +159,8 @@ def get_flash_attention_fwd_kernel_autotune_config(DMODEL, num_threads=0):
     # we should not change BLOCK_SIZE_DMODEL.
     configs = []
     
-    block_sizes_M = [4, 8]
-    block_sizes_N = [16]
+    block_sizes_M = [4, 8, 16, 32, 64]
+    block_sizes_N = [8, 16, 32, 64]
 
     for block_m in block_sizes_M:
         for block_n in block_sizes_N:
