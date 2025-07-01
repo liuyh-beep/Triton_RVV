@@ -6,16 +6,23 @@
 #include <vector>
 #include <iostream>
 
+#define STRINGIFY(x) #x
+#define CHECK_PTR(ptr, base, size) \
+    if ((char*)(ptr) < (char*)(base) || (char*)(ptr) >= (char*)(base) + (size)) { \
+        printf("ERROR: Pointer " STRINGIFY(ptr) " (%p) out of bounds [%p, %p)\n", ptr, base, (char*)(base) + (size)); \
+        abort(); \
+    }
+
 unsigned int next_power_of_2(unsigned int n);
 
 template <typename T = float>
-bool check_tensor(T *a, T *b, int n, const char *label) {
+bool check_tensor(T *a, T *b, int n, const char *label, float threshold = 1e-4) {
   bool ok = true;
 
   int j = 0;
   for (int i = 0; i < n; i++) {
 
-    if (std::abs(a[i] - b[i]) > 1e-4) {
+    if (std::abs(a[i] - b[i]) > threshold) {
       // printf("Mismatch at %d: %f != %f\n", i, a[i], b[i]);
       ok = false;
       if (j++ < 32) {
@@ -46,6 +53,8 @@ std::unique_ptr<uint32_t[][3]> get_all_grids(uint32_t gridX, uint32_t gridY,
                                              uint32_t gridZ);
 
 bool readMatrix(const char* filename, float* matrix, int& M, int& N);
+
+bool readMatrix(const char* filename, int* matrix, int& M, int& N);
 
 bool writeMatrix(const char* filename, const float* data, int rows, int cols);
 

@@ -76,23 +76,22 @@ def matmul_kernel(
         b_tile_ptr = b_ptr + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
     
     accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
-    for k in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
-        # Load the next block of A and B, generate a mask by checking the K dimension.
-        # If it is out of bounds, set it to 0.
 
-        a = tl.load(a_tile_ptr)
-        b = tl.load(b_tile_ptr)
-        # We accumulate along the K dimension.
-        accumulator = tl.dot(a, b, accumulator, out_dtype=tl.float32)
-        # Advance the ptrs to the next K block.
-        if USE_BLOCK_POINTERS:
-            a_tile_ptr = tl.advance(a_tile_ptr, [0, BLOCK_SIZE_K])
-            b_tile_ptr = tl.advance(b_tile_ptr, [BLOCK_SIZE_K, 0])
-        else:
-            a_tile_ptr += BLOCK_SIZE_K * stride_ak
-            b_tile_ptr += BLOCK_SIZE_K * stride_bk
+    a = tl.load(a_tile_ptr)
+    b = tl.load(b_tile_ptr)
+    accumulator = tl.dot(a, b, accumulator, out_dtype=tl.float32)
 
-    # Convert the accumulator to the output matrix C's type if needed.
+    # for k in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
+    #     a = tl.load(a_tile_ptr)
+    #     b = tl.load(b_tile_ptr)
+    #     accumulator = tl.dot(a, b, accumulator, out_dtype=tl.float32)
+    #     if USE_BLOCK_POINTERS:
+    #         a_tile_ptr = tl.advance(a_tile_ptr, [0, BLOCK_SIZE_K])
+    #         b_tile_ptr = tl.advance(b_tile_ptr, [BLOCK_SIZE_K, 0])
+    #     else:
+    #         a_tile_ptr += BLOCK_SIZE_K * stride_ak
+    #         b_tile_ptr += BLOCK_SIZE_K * stride_bk
+
     c = accumulator
     # -----------------------------------------------------------
     # Write back the block of the output matrix C.
@@ -142,7 +141,7 @@ def matmul_kernel(
 
 
 # Triton Benchmark
-def get_matmul_kernel_autotune_config(num_threads=0):
+def get_matmul_kernel_autotune_config(num_threads=1):
     configs = []
     
     # All possible block sizes for each dimension
@@ -150,9 +149,12 @@ def get_matmul_kernel_autotune_config(num_threads=0):
     # block_sizes_N = [8, 16, 32, 64, 128, 256]
     # block_sizes_K = [8, 16, 32, 64, 128]
     
-    block_sizes_M = [4, 8]
-    block_sizes_N = [8, 16]
-    block_sizes_K = [8]
+    # 128_128_64, 128_128_128, 128_64_128
+    # 64_256_64, 64_256_128, 64_128_128
+
+    block_sizes_M = [128]
+    block_sizes_N = [128]
+    block_sizes_K = [64, 128]
 
     # Generate unique total block sizes from all combinations
     total_block_sizes = set()
@@ -160,7 +162,8 @@ def get_matmul_kernel_autotune_config(num_threads=0):
         for block_n in block_sizes_N:
             for block_k in block_sizes_K:
                 total_block_sizes.add(block_m * block_n * block_k)
-    
+
+
     # Sort the total block sizes for systematic exploration
     total_block_sizes = sorted(list(total_block_sizes))
     
@@ -256,4 +259,4 @@ if __name__ == "__main__":
 
     # Autotune:
     shape = (512, 512, 512)
-    benchmark_triton(shape, a, b, parallel=False)
+    benchmark_triton(shape, a, b)

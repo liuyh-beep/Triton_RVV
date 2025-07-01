@@ -171,16 +171,16 @@ def check_elf_output(elf_path: str) -> Tuple[bool, str, str, str]:
             kernel_time = kernel_time_match.group(1)
             
         # Check if output contains "out OK"
-        is_correct = "out OK" in stdout
+        not_correct = "out NOT OK" in stdout
         
-        if not is_correct:
+        if not_correct:
             print(f"ELF output is INCORRECT: {elf_path}")
             if "out NOT OK" in stdout:
                 print("Output verification failed")
             else:
                 print("Unable to determine output correctness")
                 
-        return is_correct, stdout, stderr, kernel_time
+        return not_correct, stdout, stderr, kernel_time
         
     except Exception as e:
         print(f"Error running ELF: {e}")
@@ -287,12 +287,12 @@ def parse_perf_output(stdout: str, perf_output: str, stderr: str) -> Dict[str, A
     return metrics
 
 
-def perf_stat(elf_path: str, is_valid: bool = True) -> Dict[str, Any]:
+def perf_stat(elf_path: str, not_valid: bool = True) -> Dict[str, Any]:
     '''
     run perf stat for all metrics and parse its output
     '''
     # If the ELF output is not valid, return metrics with error information
-    if not is_valid:
+    if not_valid:
         return {
             'error': 'INCORRECT_OUTPUT',
             'kernel_time': 0.0,
@@ -310,7 +310,7 @@ def perf_stat(elf_path: str, is_valid: bool = True) -> Dict[str, Any]:
 
 
 def save_to_csv(metrics: Dict[str, Any], params: Dict[str, int], csv_file: str, elf_name: str, 
-                is_valid: bool = True, l2_metrics: Dict[str, Any] = None) -> None:
+                not_valid: bool = True, l2_metrics: Dict[str, Any] = None) -> None:
     """
     Save all metrics to a single CSV file, including L2 cache metrics from perf record/report
     
@@ -319,7 +319,7 @@ def save_to_csv(metrics: Dict[str, Any], params: Dict[str, int], csv_file: str, 
         params: Dictionary containing block size parameters
         csv_file: Path to the CSV file
         elf_name: Name of the ELF file
-        is_valid: Whether the ELF output is valid
+        not_valid: Whether the ELF output is invalid
         l2_metrics: L2 cache metrics from perf record/report
     """
     file_exists = os.path.exists(csv_file)
@@ -370,13 +370,13 @@ def save_to_csv(metrics: Dict[str, Any], params: Dict[str, int], csv_file: str, 
         
         # Add validity, kernel time, and total time
         row.extend([
-            "YES" if is_valid else "NO",
+            "NO" if not_valid else "YES",
             format_value(metrics.get('kernel_time', '')) if 'kernel_time' in metrics else "N/A",
             format_value(metrics.get('total_time', '')) if 'total_time' in metrics else "N/A"
         ])
 
         # If output is invalid, add empty values for all performance metrics
-        if not is_valid:
+        if not_valid:
             # Add N/A for all performance metrics (11 + 4 L2 metrics)
             row.extend(["N/A"] * 15)
         else:
@@ -465,6 +465,7 @@ def run_perf_record_report(perf_data_path: str, perf_report_path: str, elf_path:
     record_cmd = f"perf record -o {perf_data_path} -e {cache_event} -F 4001 {elf_path} "
     returncode, _, stderr = run_command(record_cmd, check=False)
 
+    kernel_name = kernel_name.removesuffix("_uncomplete")
     if returncode != 0:
         print(f"Warning: perf record command failed: {stderr}")
         return {"error": f"perf record failed: {stderr}"}
@@ -634,10 +635,10 @@ def main():
                 params = {'BLOCK_SIZE': 0}
                 
             # First check if the ELF output is correct
-            is_valid, _, _, kernel_time = check_elf_output(elf_path)
+            not_valid, _, _, kernel_time = check_elf_output(elf_path)
 
             # Create simple metrics if output is invalid
-            if not is_valid:
+            if not_valid:
                 # Extract kernel time if available
                 kernel_time_value = 0.0
                 try:
@@ -652,11 +653,11 @@ def main():
                 }
                 
                 # Save error metrics to CSV without L2 metrics
-                save_to_csv(error_metrics, params, perf_stat_csv, elf_name, is_valid)
+                save_to_csv(error_metrics, params, perf_stat_csv, elf_name, not_valid)
                 print(f"Warning: Recorded invalid output for {elf_name} in {perf_stat_csv}")
             else:
                 # Run perf stat for all metrics
-                metrics = perf_stat(elf_path, is_valid)
+                metrics = perf_stat(elf_path, not_valid)
                 
                 # Run perf record and report for L2 cache events
                 perf_data_path = variant.get('perf_data_path')
@@ -672,7 +673,7 @@ def main():
                         l2_metrics = None
                 
                 # Save all metrics to CSV including L2 metrics from perf record/report
-                save_to_csv(metrics, params, perf_stat_csv, elf_name, is_valid, l2_metrics)
+                save_to_csv(metrics, params, perf_stat_csv, elf_name, not_valid, l2_metrics)
                 print(f"All perf metrics for {elf_name} saved to {perf_stat_csv}")
 
         # Transfer files after all processing is done

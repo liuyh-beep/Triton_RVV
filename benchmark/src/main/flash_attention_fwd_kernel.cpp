@@ -29,9 +29,9 @@ int main(int argc, char *argv[]) {
     int Z = 1;    // Batch Size
     int H = 2;    // Number of Heads
     int N_CTX_Q = 128; // Sequence Length for Q
-    int N_CTX_K = 128; // Sequence Length for K/V
+    int N_CTX_KV = 128; // Sequence Length for K/V
     int D_HEAD = 64;   // Dimension of Head
-    int RUN_COUNT = 3; // Reduced for faster testing
+    int RUN_COUNT = 1; // Reduced for faster testing
 
     // --- Argument Parsing ---
     // Example: "ZxHxN_CTX_QxN_CTX_KxD_HEADxRUN_COUNT" -> "1x2x128x128x64x3"
@@ -40,18 +40,18 @@ int main(int argc, char *argv[]) {
         if (Shape.size()) {
             assert(Shape.size() == 6 && "Invalid shape: ZxHxN_CTX_QxN_CTX_KxD_HEADxRUN_COUNT\n");
             Z = Shape.at(0); H = Shape.at(1); N_CTX_Q = Shape.at(2);
-            N_CTX_K = Shape.at(3); D_HEAD = Shape.at(4); RUN_COUNT = Shape.at(5);
+            N_CTX_KV = Shape.at(3); D_HEAD = Shape.at(4); RUN_COUNT = Shape.at(5);
         }
     }
-    printf("FlashAttention Fwd Data: Z=%d, H=%d, N_CTX_Q=%d, N_CTX_K=%d, D_HEAD=%d, RUN_COUNT=%d\n",
-           Z, H, N_CTX_Q, N_CTX_K, D_HEAD, RUN_COUNT);
+    printf("FlashAttention Fwd Data: Z=%d, H=%d, N_CTX_Q=%d, N_CTX_KV=%d, D_HEAD=%d, RUN_COUNT=%d\n",
+           Z, H, N_CTX_Q, N_CTX_KV, D_HEAD, RUN_COUNT);
 
     float sm_scale = 1.0f / sqrtf(static_cast<float>(D_HEAD));
 
     // --- Memory Allocation ---
     size_t q_elements = (size_t)Z * H * N_CTX_Q * D_HEAD;
-    size_t k_elements = (size_t)Z * H * N_CTX_K * D_HEAD;
-    size_t v_elements = (size_t)Z * H * N_CTX_K * D_HEAD;
+    size_t k_elements = (size_t)Z * H * N_CTX_KV * D_HEAD;
+    size_t v_elements = (size_t)Z * H * N_CTX_KV * D_HEAD;
     size_t out_elements = (size_t)Z * H * N_CTX_Q * D_HEAD;
     size_t m_logsumexp_elements = (size_t)Z * H * N_CTX_Q;
 
@@ -68,13 +68,13 @@ int main(int argc, char *argv[]) {
         free(q_ptr); free(k_ptr); free(v_ptr); free(ref_output_ptr); free(real_output_ptr); free(m_logsumexp_unused_ptr);
         return -1;
     }
+    memset(ref_output_ptr, 0, out_elements * sizeof(float));
     memset(real_output_ptr, 0, out_elements * sizeof(float));
     memset(m_logsumexp_unused_ptr, 0, m_logsumexp_elements * sizeof(float));
 
 
     // --- Data Initialization ---
 #ifdef CHECK_ACCURACY
-    printf("Mode: CHECK_ACCURACY. Loading data from text files...\n");
     // Define SHAPE strings for getDB. This is an example, adjust to your file naming.
     // Input Q: ZxHxN_CTX_QxD_HEAD, index 1
     // Input K: ZxHxN_CTX_KxD_HEAD, index 2
@@ -84,48 +84,55 @@ int main(int argc, char *argv[]) {
     // Or we adapt readMatrix to handle multi-dim conceptually.
     // Let's assume files store flattened data and readMatrix reads M=1, N=TOTAL_ELEMENTS
 
-    std::string q_shape_str = std::to_string(Z*H*N_CTX_Q*D_HEAD); // Example: flattened
-    std::string k_shape_str = std::to_string(Z*H*N_CTX_K*D_HEAD);
-    std::string v_shape_str = std::to_string(Z*H*N_CTX_K*D_HEAD);
-    std::string out_shape_str = std::to_string(Z*H*N_CTX_Q*D_HEAD);
-    int dummy_m, dummy_n; // For readMatrix
+    int tmp_m = Z * H * N_CTX_Q, tmp_n = D_HEAD;
+    std::string file1 = getDB("flash_attention_fwd", std::to_string(Z) + "x" + std::to_string(H) + "x" + std::to_string(N_CTX_Q) + "x" + std::to_string(D_HEAD), 1);
+    if (!readMatrix(file1.c_str(), q_ptr, tmp_m, tmp_n)) {
+        printf("Failed to read q_ptr from %s\n", file1.c_str());
+        return -1;
+    }
+    printf("q_ptr (%dx%dx%dx%d) loaded from %s\n", Z, H, N_CTX_Q, D_HEAD, file1.c_str());
 
-    if (!readLoss(getDB("flash_attention", q_shape_str, 1).c_str(), q_ptr, q_elements)) return -1; // Using readLoss for 1D float array
-    printf("Q loaded.\n");
-    if (!readLoss(getDB("flash_attention", k_shape_str, 2).c_str(), k_ptr, k_elements)) return -1;
-    printf("K loaded.\n");
-    if (!readLoss(getDB("flash_attention", v_shape_str, 3).c_str(), v_ptr, v_elements)) return -1;
-    printf("V loaded.\n");
-    if (!readLoss(getDB("flash_attention", out_shape_str, 4).c_str(), ref_output_ptr, out_elements)) return -1;
-    printf("Ref Output loaded.\n");
+    //Z * H * N_CTX_Q * D_HEAD;
+    std::string file4 = getDB("flash_attention_fwd", std::to_string(Z) + "x" + std::to_string(H) + "x" + std::to_string(N_CTX_Q) + "x" + std::to_string(D_HEAD), 4);
+    if (!readMatrix(file4.c_str(), ref_output_ptr, tmp_m, tmp_n)) {
+        printf("Failed to read ref_output from %s\n", file4.c_str());
+        return -1;
+    }
+    printf("ref_output_ptr (%dx%dx%dx%d) loaded from %s\n", Z, H, N_CTX_Q, D_HEAD, file4.c_str());
 
-#else
-    printf("Mode: Generating random data (CHECK_ACCURACY not defined)...\n");
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<float> ur_dist(-1.0f, 1.0f);
+    tmp_m = Z * H * N_CTX_KV, tmp_n = D_HEAD;
+    std::string file2 = getDB("flash_attention_fwd", std::to_string(Z) + "x" + std::to_string(H) + "x" + std::to_string(N_CTX_KV) + "x" + std::to_string(D_HEAD), 2);
+    if (!readMatrix(file2.c_str(), k_ptr, tmp_m, tmp_n)) {
+        printf("Failed to read k_ptr from %s\n", file2.c_str());
+        return -1;
+    }
+    printf("k_ptr (%dx%dx%dx%d) loaded from %s\n", Z, H, N_CTX_KV, D_HEAD, file2.c_str());
 
-    for (size_t i = 0; i < q_elements; ++i) q_ptr[i] = ur_dist(gen);
-    for (size_t i = 0; i < k_elements; ++i) k_ptr[i] = ur_dist(gen);
-    for (size_t i = 0; i < v_elements; ++i) v_ptr[i] = ur_dist(gen);
-    printf("Random data generated.\n");
+    std::string file3 = getDB("flash_attention_fwd", std::to_string(Z) + "x" + std::to_string(H) + "x" + std::to_string(N_CTX_KV) + "x" + std::to_string(D_HEAD), 3);
+    if (!readMatrix(file3.c_str(), v_ptr, tmp_m, tmp_n)) {
+        printf("Failed to read v_ptr from %s\n", file3.c_str());
+        return -1;
+    }
+    printf("v_ptr (%dx%dx%dx%d) loaded from %s\n", Z, H, N_CTX_KV, D_HEAD, file3.c_str());
+
+// #else
+//     printf("Mode: Generating random data (CHECK_ACCURACY not defined)...\n");
+//     std::random_device rd;
+//     std::mt19937 gen(rd());
+//     std::uniform_real_distribution<float> ur_dist(-1.0f, 1.0f);
+
+//     for (size_t i = 0; i < q_elements; ++i) q_ptr[i] = ur_dist(gen);
+//     for (size_t i = 0; i < k_elements; ++i) k_ptr[i] = ur_dist(gen);
+//     for (size_t i = 0; i < v_elements; ++i) v_ptr[i] = ur_dist(gen);
+//     printf("Random data generated.\n");
 #endif
-
-    // --- Kernel Execution and Timing ---
-    // Block sizes for C++ version (passed to function)
-    // For Triton, these are part of kernel compilation config (config.json)
-    int CPP_BLOCK_M = 64; 
-    int CPP_BLOCK_N = 64;
-    if (D_HEAD > 128) { CPP_BLOCK_M = 32; CPP_BLOCK_N = 32; }
-    else if (D_HEAD <=32) { CPP_BLOCK_M = 128; CPP_BLOCK_N = 128; }
-
 
 #ifdef C_KERNEL_ENABLE
     printf("Executing C FlashAttention Fwd Kernel %d times...\n", RUN_COUNT);
     auto c_fwd_begin_time = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < RUN_COUNT; i++) {
         flash_attention_fwd_cpp(q_ptr, k_ptr, v_ptr, real_output_ptr, m_logsumexp_unused_ptr,
-                                Z, H, N_CTX_Q, N_CTX_K, D_HEAD,
+                                Z, H, N_CTX_Q, N_CTX_KV, D_HEAD,
                                 sm_scale, CPP_BLOCK_M, CPP_BLOCK_N, (bool)(std::getenv("CAUSAL") ? std::stoi(std::getenv("CAUSAL")) : 0));
     }
     auto c_fwd_end_time = std::chrono::high_resolution_clock::now();
@@ -134,6 +141,15 @@ int main(int argc, char *argv[]) {
 #endif
 
 #ifdef TRITON_KERNEL_ENABLE
+  int num_thread = 1;
+#ifdef SINGLE_BLOCK
+  num_thread= -1;
+  printf("Not complete loop, actual thread num: %d\n", num_thread);
+#endif
+#ifdef SINGLE_ITERATION
+  printf("Single iteration mode enabled, num_thread = %d\n", num_thread);
+#endif
+
     printf("Executing Triton FlashAttention Fwd Kernel %d times...\n", RUN_COUNT);
     // Grid: (num_q_blocks, num_batch_heads)
     // BLOCK_M, BLOCK_N, BLOCK_DMODEL are taken from config.json for Triton kernel compilation
@@ -145,38 +161,60 @@ int main(int argc, char *argv[]) {
     // if (blk_m_str) TRITON_CFG_BLOCK_M = std::stoi(blk_m_str);
 
 
-    int grid_dim0 = (N_CTX_Q + flash_attention_fwd_kernel_BLOCK_M - 1) / flash_attention_fwd_kernel_BLOCK_M; // cdiv
-    int grid_dim1 = Z * H;
-    int num_threads_triton = 1; // Example
-
     // Strides for Triton kernel (assuming contiguous Z, H, SeqLen, HeadDim)
-    long stride_qz_tr = H * N_CTX_Q * D_HEAD, stride_qh_tr = N_CTX_Q * D_HEAD, stride_qm_tr = D_HEAD, stride_qk_tr = 1;
-    long stride_kz_tr = H * N_CTX_K * D_HEAD, stride_kh_tr = N_CTX_K * D_HEAD, stride_km_tr = D_HEAD, stride_kk_tr = 1;
-    long stride_vz_tr = H * N_CTX_K * D_HEAD, stride_vh_tr = N_CTX_K * D_HEAD, stride_vm_tr = D_HEAD, stride_vk_tr = 1;
-    long stride_oz_tr = H * N_CTX_Q * D_HEAD, stride_oh_tr = N_CTX_Q * D_HEAD, stride_om_tr = D_HEAD, stride_ok_tr = 1;
+    //Z * H * N_CTX_Q * D_HEAD
+    int stride_qz = H * N_CTX_Q * D_HEAD, stride_qh = N_CTX_Q * D_HEAD, stride_qm = D_HEAD;
+    int stride_kz = H * N_CTX_KV * D_HEAD, stride_kh = N_CTX_KV * D_HEAD, stride_km = D_HEAD;
+    int stride_vz = H * N_CTX_KV * D_HEAD, stride_vh = N_CTX_KV * D_HEAD, stride_vm = D_HEAD;
+    int stride_oz = H * N_CTX_Q * D_HEAD, stride_oh = N_CTX_Q * D_HEAD, stride_om = D_HEAD;
     // bool is_causal_runtime = (bool)(std::getenv("CAUSAL") ? std::stoi(std::getenv("CAUSAL")) : 0);
 
+    int grid_dim0 = (N_CTX_Q + flash_attention_fwd_kernel_BLOCK_SIZE_M - 1) / flash_attention_fwd_kernel_BLOCK_SIZE_M; // cdiv
+    int grid_dim1 = Z * H;
 
     auto triton_fwd_begin_time = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < RUN_COUNT; i++) {
         // IMPORTANT: Verify this signature against the generated flash_attention_kernel_launcher.h
         // The order and number of scalar args after tensor pointers is critical.
-        // It's likely Z, H, N_CTX_Q, N_CTX_K, D_HEAD, sm_scale. IS_CAUSAL is constexpr in kernel.
+        // It's likely Z, H, N_CTX_Q, N_CTX_KV, D_HEAD, sm_scale. IS_CAUSAL is constexpr in kernel.
         // The kernel has IS_CAUSAL as constexpr, so it's compiled in.
         // The launcher might not pass it. We need to check.
         // If IS_CAUSAL is truly constexpr, then we need two compiled versions of the kernel
         // or the launcher has a way to select. Let's assume the wrapper takes all runtime dims.
+
+        //void flash_attention_fwd_kernel_wrap(uint32_t gridX, uint32_t gridY, uint32_t gridZ, int num_threads, flash_attention_fwd_kernel_kernel_ptr_t kernel_ptr , 
+        //void* arg0, void* arg1, void* arg2, void* arg3, 
+        //void* arg4, 
+        //int32_t arg5, int32_t arg6, int32_t arg7, 
+        //int32_t arg9, int32_t arg10, int32_t arg11, 
+        //int32_t arg13, int32_t arg14, int32_t arg15, 
+        //int32_t arg17, int32_t arg18, int32_t arg19, 
+        //int32_t arg21, int32_t arg22, int32_t arg23, 
+        //float arg24)
+
+        /*
+        Q_ptr, K_ptr, V_ptr, Out_ptr, # Tensor pointers
+        M_LogSumExp_ptr, # Pointer to store m_i and l_i (combined for stability)
+
+        stride_qz, stride_qh, stride_qm, stride_qk, # Strides for Q
+        stride_kz, stride_kh, stride_km, stride_kk, # Strides for K (km for N_CTX)
+        stride_vz, stride_vh, stride_vm, stride_vk, # Strides for V (vm for N_CTX)
+        stride_oz, stride_oh, stride_om, stride_ok, # Strides for Out
+
+        H, N_CTX, D_HEAD, # Dimensions: Batch, Heads, SeqLenQ, SeqLenK, HeadDim
+        sm_scale, # Softmax scale factor (usually 1/sqrt(D_HEAD))
+        */
         flash_attention_fwd_kernel_wrap(
             grid_dim0, grid_dim1, 1,  // gridX, gridY, gridZ
-            num_threads_triton,       // num_threads
+            num_thread,
             flash_attention_fwd_kernel, // kernel_ptr_t
             q_ptr, k_ptr, v_ptr, real_output_ptr, m_logsumexp_unused_ptr, // Tensor args
             // Scalar args (must match generated launcher)
-            (int32_t)stride_qz_tr, (int32_t)stride_qh_tr, (int32_t)stride_qm_tr,
-            (int32_t)stride_kz_tr, (int32_t)stride_kh_tr, (int32_t)stride_km_tr,
-            (int32_t)stride_vz_tr, (int32_t)stride_vh_tr, (int32_t)stride_vm_tr,
-            (int32_t)stride_oz_tr, (int32_t)stride_oh_tr, (int32_t)stride_om_tr,
-            (int32_t)H, (int32_t)N_CTX_Q, (int32_t)D_HEAD, sm_scale
+            stride_qz, stride_qh, stride_qm,
+            stride_kz, stride_kh, stride_km,
+            stride_vz, stride_vh, stride_vm,
+            stride_oz, stride_oh, stride_om,
+            H, N_CTX_Q, D_HEAD, sm_scale
             // IS_CAUSAL is tl.constexpr in kernel, so it's compiled in.
             // The wrapper *might* not take it. Check generated header!
             // If it does, add: (int32_t)is_causal_runtime
@@ -189,9 +227,7 @@ int main(int argc, char *argv[]) {
 
     // --- Accuracy Check ---
 #ifdef CHECK_ACCURACY
-    printf("Checking accuracy for FlashAttention Fwd...\n");
     check_tensor(ref_output_ptr, real_output_ptr, out_elements, "flash_attention_fwd_output");
-    printf("Accuracy check complete.\n");
 #endif
 
     // --- Save Test Data ---
@@ -201,10 +237,12 @@ int main(int argc, char *argv[]) {
 #endif
 
     // --- Cleanup ---
-    printf("Cleaning up FlashAttention Fwd memory...\n");
-    free(q_ptr); free(k_ptr); free(v_ptr);
-    free(ref_output_ptr); free(real_output_ptr); free(m_logsumexp_unused_ptr);
-    printf("Cleanup complete. Exiting FlashAttention Fwd main.\n");
+    free(q_ptr); 
+    free(k_ptr); 
+    free(v_ptr);
+    free(ref_output_ptr);
+    free(real_output_ptr);
+    free(m_logsumexp_unused_ptr);
 
     return 0;
 }

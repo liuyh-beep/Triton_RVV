@@ -104,6 +104,7 @@ class BuildConfig:
         self.clangpp_base = (
             f"{self.llvm_build_dir}/bin/clang++ --target=riscv64-unknown-linux-gnu "
             f"--sysroot={self.riscv_gnu_toolchain_dir}/sysroot "
+            f"-fuse-ld=lld -fveclib=SLEEF -lm -L /home/kevin/sleef/build-riscv64/lib "
             f"--gcc-toolchain={self.riscv_gnu_toolchain_dir}"
         )
         self.objdump = (
@@ -293,14 +294,18 @@ def load_config_from_json(config: BuildConfig) -> None:
         config.opt_level = opt_level
         config.opt_suffix = f"_{opt_level}"
 
-    # if "mode" in source_config:
-    #     mode_val = source_config["mode"]
-    #     if mode_val == "accuracy":
-    #         config.mode = 1
-    #         config.mode_suffix = "_accuracy"
-    #     elif mode_val == "keep_test":
-    #         config.mode = 2
-    #         config.mode_suffix = "_keep_test"
+    if "mode" in source_config:
+        mode_val = source_config["mode"]
+        if mode_val == "accuracy":
+            config.mode = 0
+            config.mode_suffix = ""
+        elif mode_val == "single_block":
+            config.mode = 1
+            config.mode_suffix = "_single_block"
+        elif mode_val == "single_iteration":
+            config.mode = 2
+            config.mode_suffix = "_single_iteration"
+
 
     if "copy2Gem5" in source_config:
         config.copy2Gem5 = source_config["copy2Gem5"]
@@ -323,9 +328,9 @@ def load_config_from_json(config: BuildConfig) -> None:
     )
     print(f"- Linking: {'static' if config.static_link else 'dynamic'}")
     print(f"- Optimization: {config.opt_level}")
-    # print(
-    #     f"- Mode: {'none' if config.mode == 0 else 'accuracy' if config.mode == 1 else 'keep_test'}"
-    # )
+    print(
+        f"- Mode: {'single_block' if config.mode == 1 else 'Normal' if config.mode == 0 else 'single_iteration'}"
+    )
 
 
 def setup_directories(config: BuildConfig) -> None:
@@ -364,11 +369,11 @@ clang++ --target=riscv64-unknown-linux-gnu \
 def configure_compiler_flags(config: BuildConfig) -> None:
     """Configure compiler flags."""
     # Debug flags
-    debug_flag = "-g -fno-omit-frame-pointer" if config.debug_mode else ""
-    
+    debug_flag = "-g -fno-omit-frame-pointer " if config.debug_mode else ""
+
     #-march=rv64gcv_zvl256b
     # Architecture flags
-    march = f"rv64gcv_zvl{str(config.VLEN)}b" if config.vectorize else "rv64gc"
+    march = f"rv64gcv_zvl{str(config.VLEN)}b  -mllvm -force-tail-folding-style=data-with-evl -mllvm -prefer-predicate-over-epilogue=predicate-dont-vectorize" if config.vectorize else "rv64gc"
 
     # Build complete CLANGPP command
     config.clangpp = (
@@ -381,11 +386,12 @@ def configure_compiler_flags(config: BuildConfig) -> None:
     config.clangpp += f" -{config.opt_level} {debug_flag}"
 
     # # Mode flags for accuracy checking and test data
-    # if config.mode == 1:
-    #     config.clangpp += " -DCHECK_ACCURACY"
-    # elif config.mode == 2:
-    #     config.clangpp += " -DKEEP_TEST_DATA"
-
+    if config.mode == 1:
+        config.clangpp += " -DSINGLE_BLOCK"
+    elif config.mode == 0:
+        config.clangpp += " -DCHECK_ACCURACY"
+    elif config.mode == 2:
+        config.clangpp += " -DSINGLE_ITERATION"
     #print(f"Compiler command: {config.clangpp}")
 
 
@@ -479,6 +485,19 @@ def build_triton_kernel(config: BuildConfig) -> None:
     env["USE_BLOCK_POINTERS"] = "1"
     env["TRITON_ALWAYS_COMPILE"] = "1"
     
+    # The following lines are used by debug flags
+    # mlir_dump_dir = config.src_dir / "launcher" / "mlir_dump"
+    # create_dir_if_not_exists(mlir_dump_dir)
+    # mlir_dump_file = mlir_dump_dir / "dumped.mlir"  
+    # reproducer_dir = config.src_dir / "launcher" / "reproducer"
+    # create_dir_if_not_exists(reproducer_dir)
+    # reproducer_file = reproducer_dir / "reproducer.mlir"
+
+    # # Debug flags
+    # env["MLIR_ENABLE_DUMP"] = "1"
+    # env["MLIR_DUMP_PATH"] = str(mlir_dump_file)
+    # env["TRITON_REPRODUCER_PATH"] = str(reproducer_file)
+
     print("Run tuning...")
     try:
         subprocess.run(
@@ -545,7 +564,7 @@ def build_triton_kernel(config: BuildConfig) -> None:
 
         # Setup auto-tuner directories for this kernel if not already set up
         if not hasattr(config, 'kernel_auto_tuner_dir'):
-            config.setup_auto_tuner_dirs(kernel_name)
+            config.setup_auto_tuner_dirs(kernel_name + "_single_block" if config.mode == 1 else kernel_name if config.mode == 0 else kernel_name + "_single_iteration")
 
         # Process LLVM IR
         kernel_ir = kernel_aux_file_dir / f"{kernel_name}_kernel.llir"
@@ -674,10 +693,12 @@ def build_final_executable(config: BuildConfig) -> None:
 
     # Build executable with CHECK_ACCURACY enabled
     run_command(
+        # clang -### -c --target=riscv64-unknown-linux-gnu -fveclib=SLEEF -march=rv64gcv %s
+        # /llvm_rvv/llvm/llvm-project/clang/test/Driver/fveclib.c
         f"{config.clangpp} {main} -I {config.build_dir}/../../env_build/include "
         f"-I {config.kernel_launcher_include_dir} -L {config.lib_dir} -L {config.build_dir}/../../env_build/sysroot/lib "
         f"-l{config.lib_name} -lsupport -latomic -lsleef -std=c++17 "
-        f"-D{config.kernel_enable} -DCHECK_ACCURACY -fPIC -o {out_file}"
+        f"-D{config.kernel_enable} -fPIC -o {out_file}"
     )
 
     print(f"The ELF with accuracy check is at {out_file}")

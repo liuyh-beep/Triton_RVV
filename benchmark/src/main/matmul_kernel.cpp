@@ -89,12 +89,19 @@ int main(int argc, char *argv[]) {
 
   // triton kernel
 #ifdef TRITON_KERNEL_ENABLE
+  int num_thread = 1;
+#ifdef SINGLE_BLOCK
+  num_thread= -1;
+  printf("Not complete loop, actual thread num: %d\n", num_thread);
+#endif
+#ifdef SINGLE_ITERATION
+  printf("Single iteration mode enabled, num_thread = %d\n", num_thread);
+#endif
   high_resolution_clock::time_point beginTime = high_resolution_clock::now();
   for (int i = 0; i < RUN_COUNT; i++) {
-    matmul_kernel_wrap(ceil(1.0 * M / matmul_kernel_BLOCK_SIZE_M) *
-                          ceil(1.0 * N / matmul_kernel_BLOCK_SIZE_N),
-                      1, 1, 1, matmul_kernel, arg0, arg1, real_out, M, N, K, K,
-                      N, N);
+    matmul_kernel_wrap(
+      ceil(1.0 * M / matmul_kernel_BLOCK_SIZE_M) * ceil(1.0 * N / matmul_kernel_BLOCK_SIZE_N), 1, 1,
+           num_thread, matmul_kernel, arg0, arg1, real_out, M, N, K, K, N, N);
   }
   high_resolution_clock::time_point endTime = high_resolution_clock::now();
   milliseconds timeInterval =
@@ -131,7 +138,7 @@ int main(int argc, char *argv[]) {
 #endif
 
 
-#ifdef KEEP_TEST_DATA
+// #ifdef KEEP_TEST_DATA
   char filename[256];
   bool success = true;
 
@@ -152,7 +159,7 @@ int main(int argc, char *argv[]) {
   }
   if(!success)
      printf("Warning: Some matrices were not saved successfully\n");
-#endif
+// #endif
 
   free(arg0);
   free(arg1);

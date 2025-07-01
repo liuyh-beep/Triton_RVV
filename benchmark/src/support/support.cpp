@@ -97,6 +97,31 @@ bool readMatrix(const char* filename, float* matrix, int& M, int& N) {
     return true;
 }
 
+bool readMatrix(const char* filename, int* matrix, int& M, int& N){
+    FILE* file = fopen(filename, "r");
+    if (!file) {
+        printf("Cannot open file %s\n", filename);
+        return false;
+    }
+
+    if (fscanf(file, "%d %d", &M, &N) != 2) {
+        printf("Error reading matrix dimensions\n");
+        fclose(file);
+        return false;
+    }
+
+    for (int i = 0; i < M * N; i++) {
+        if (fscanf(file, "%d", &matrix[i]) != 1) {
+            printf("Error reading matrix data\n");
+            fclose(file);
+            return false;
+        }
+    }
+
+    fclose(file);
+    return true;
+}
+
 bool writeMatrix(const char* filename, const float* data, int rows, int cols) {
     FILE* fp = fopen(filename, "w");
     if (!fp) {

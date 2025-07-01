@@ -4,7 +4,7 @@ import os
 import argparse
 from typing import Tuple
 
-'''Usage: python3 auto-tuner/transfer_to_remote.py <kernel_name>'''
+'''Usage: python3 auto-tuner/report_to_host.py <kernel_name>'''
 
 class Config:
     """Configuration class to hold all settings."""
