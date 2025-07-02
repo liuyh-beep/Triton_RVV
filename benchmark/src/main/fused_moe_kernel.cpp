@@ -140,22 +140,27 @@ int main(int argc, char *argv[]) {
     high_resolution_clock::time_point beginTime = high_resolution_clock::now();
     for (int i = 0; i < RUN_COUNT; i++) {
         /*
-            a_ptr, b_ptr, c_ptr,
-            sorted_token_ids_ptr,
-            expert_ids_ptr,
-            num_tokens_post_padded_ptr,
-            # Matrix dimensions
-            N, K, EM,
-            num_valid_tokens,
-            stride_am, stride_ak,
-            stride_be, stride_bk, stride_bn,
-            stride_cm, stride_cn,
+        a_ptr, b_ptr, c_ptr,
+        # These will be updated by pre_hook:
+        sorted_token_ids_ptr,
+        expert_ids_ptr,
+        # Matrix dimensions
+        N, K, num_tokens_post_padded,
+        num_valid_tokens,
+        stride_am, stride_ak, # [E, K, N, M]
+        stride_be, stride_bk, stride_bn,
+        stride_cm, stride_cn,
+        */
+
+        /*
+        uint32_t gridX, uint32_t gridY, uint32_t gridZ, int num_threads,
+                        fused_moe_kernel_kernel_ptr_t kernel_ptr , void* arg0, void* arg1, void* arg2, void* arg3, void* arg4, int32_t arg5, int32_t arg6, int32_t arg7, int32_t arg8, int32_t arg9, int32_t arg11, int32_t arg13, int32_t arg14
         */
         fused_moe_kernel_wrap(
             ceil(1.0 * total_padded_tokens / fused_moe_kernel_BLOCK_SIZE_M) * ceil(1.0 * N / fused_moe_kernel_BLOCK_SIZE_N), 1, 1, 
             num_thread, fused_moe_kernel, 
             A, B, real_output,
-            sorted_token_ids, expert_ids, num_tokens_post_padded,
+            sorted_token_ids, expert_ids,
             N, K, total_padded_tokens,
             num_valid_tokens,
             K, 
