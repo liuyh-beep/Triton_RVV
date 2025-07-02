@@ -33,7 +33,8 @@ int main(int argc, char *argv[]) {
     // EM = total_padded_tokens
 
     int M = 1000, E = 8, K = 128, N = 512, TopK = 2;
-    int total_padded_tokens = 2008, expert_ids_size = total_padded_tokens / fused_moe_kernel_BLOCK_SIZE_M, num_valid_tokens = M * TopK;
+    int total_padded_tokens = 2008, expert_ids_size = total_padded_tokens / fused_moe_kernel_BLOCK_SIZE_M;
+    int num_valid_tokens = M * TopK;
     int RUN_COUNT = 1;
 
     printf("MoE MatMul Data: M=%d, E=%d, K=%d, N=%d, TopK=%d, total_padded_tokens=%d, expert_ids_size=%d, RUN_COUNT=%d\n",
@@ -49,7 +50,7 @@ int main(int argc, char *argv[]) {
     int* num_tokens_post_padded = (int*)malloc(sizeof(int));
     *num_tokens_post_padded = total_padded_tokens;
 
-    if(!A || !B /*|| !ref_output*/ || !real_output || !sorted_token_ids || !expert_ids || !num_tokens_post_padded) {
+    if(!A || !B || !ref_output || !real_output || !sorted_token_ids || !expert_ids || !num_tokens_post_padded) {
         printf("ERROR: Memory allocation failed.\n");
         return -1;
     }
@@ -98,28 +99,28 @@ int main(int argc, char *argv[]) {
     printf("Matrix expert_ids (1x%d) loaded from %s\n", expert_ids_size, file5.c_str());
 #endif
 
-    printf("Memory ranges:\n");
-    printf("A: %p to %p\n", A, A + M * K);
-    for(int i=0; i<5; ++i)
-        printf("A[%d]: %f\n", i, A[i]);
-
-    printf("B: %p to %p\n", B, B + E * N * K);
-    for(int i=0; i<5; ++i)
-        printf("B[%d]: %f\n", i, B[i]);
-
-    // printf("C: %p to %p\n", real_output, real_output + M * TopK * N);
+    // printf("Memory ranges:\n");
+    // printf("A: %p to %p\n", A, A + M * K);
     // for(int i=0; i<5; ++i)
-    //     printf("C[%d]: %f\n", i, real_output[i]);
+    //     printf("A[%d]: %f\n", i, A[i]);
 
-    printf("ref_output: %p to %p\n", ref_output, ref_output + M * TopK * N);
-    for(int i=0; i<5; ++i)
-        printf("ref_output[%d]: %f\n", i, ref_output[i]);
-    printf("sorted_token_ids: %p to %p\n", sorted_token_ids, sorted_token_ids + total_padded_tokens);
-    for(int i=0; i<5; ++i)
-        printf("sorted_token_ids[%d]: %d\n", i, sorted_token_ids[i]);
-    printf("expert_ids: %p to %p\n", expert_ids, expert_ids + expert_ids_size);
-    for(int i=0; i<5; ++i)
-        printf("expert_ids[%d]: %d\n", i, expert_ids[i]);
+    // printf("B: %p to %p\n", B, B + E * N * K);
+    // for(int i=0; i<5; ++i)
+    //     printf("B[%d]: %f\n", i, B[i]);
+
+    // // printf("C: %p to %p\n", real_output, real_output + M * TopK * N);
+    // // for(int i=0; i<5; ++i)
+    // //     printf("C[%d]: %f\n", i, real_output[i]);
+
+    // printf("ref_output: %p to %p\n", ref_output, ref_output + M * TopK * N);
+    // for(int i=0; i<5; ++i)
+    //     printf("ref_output[%d]: %f\n", i, ref_output[i]);
+    // printf("sorted_token_ids: %p to %p\n", sorted_token_ids, sorted_token_ids + total_padded_tokens);
+    // for(int i=0; i<5; ++i)
+    //     printf("sorted_token_ids[%d]: %d\n", i, sorted_token_ids[i]);
+    // printf("expert_ids: %p to %p\n", expert_ids, expert_ids + expert_ids_size);
+    // for(int i=0; i<5; ++i)
+    //     printf("expert_ids[%d]: %d\n", i, expert_ids[i]);
 
 #ifdef C_KERNEL_ENABLE
     // C++ kernel execution would go here.
@@ -178,15 +179,15 @@ int main(int argc, char *argv[]) {
     check_tensor(ref_output, real_output, M * TopK * N, "out");
 #endif
 
-  char filename[256];
-  bool success = true;
+//   char filename[256];
+//   bool success = true;
 
-  snprintf(filename, sizeof(filename), "real_output_%dx%dx%d_1.txt", M, TopK, N);
-  if (!writeMatrix(filename, real_output, M * TopK, N)) {
-      printf("Failed to save input matrix arg0\n");
-  }
+//   snprintf(filename, sizeof(filename), "real_output_%dx%dx%d_1.txt", M, TopK, N);
+//   if (!writeMatrix(filename, real_output, M * TopK, N)) {
+//       printf("Failed to save input matrix arg0\n");
+//   }
 
-  printf("saved real_out\n");
+//   printf("saved real_out\n");
 
     free(A);
     //printf("A is freed\n");

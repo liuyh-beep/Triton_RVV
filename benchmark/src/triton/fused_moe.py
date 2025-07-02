@@ -22,7 +22,7 @@ def fused_moe_kernel(
     # Matrix dimensions
     N, K, num_tokens_post_padded,
     num_valid_tokens,
-    stride_am, stride_ak,
+    stride_am, stride_ak, # [E, K, N, M]
     stride_be, stride_bk, stride_bn,
     stride_cm, stride_cn,
     # Meta-parameters
@@ -155,7 +155,7 @@ def moe_align_block_size(topk_ids: torch.Tensor, block_size: int, num_experts: i
 
 def get_moe_fused_autotune_config(num_threads=1):
     configs = []
-    block_sizes_m = [4] #[4]
+    block_sizes_m = [4]
     block_sizes_n = [4, 8]
     block_sizes_k = [8]
     
@@ -550,95 +550,102 @@ if __name__ == "__main__":
     gating_output = torch.randn(M, E, device=DEVICE)  # Gating scores for each token across experts
     _, topk_ids = torch.topk(gating_output, topK, dim=-1)
     
+    sorted_token_ids, expert_ids, num_tokens_post_padded = moe_align_block_size(
+                topk_ids, block_sizes_m[0], E
+    )
+    c = torch.zeros((M, topK, N), device=DEVICE, dtype=DTYPE)
+    
+    benchmark_triton(a, b, c, sorted_token_ids=sorted_token_ids, expert_ids_ptr=expert_ids, num_tokens_post_padded=num_tokens_post_padded, num_valid_tokens=topk_ids.numel())
+
     # Save input matrices a and b once (they don't change across block sizes)
-    print("Saving input matrices a and b...")
-    save_matrices_to_txt(a, b, 
-                        output_dir="/home/yuhao/T_RVV/benchmark/auto-tuner/fused_moe/run/test_data", 
-                        precision=9,)
+    # print("Saving input matrices a and b...")
+    # save_matrices_to_txt(a, b, 
+    #                     output_dir="/home/yuhao/T_RVV/benchmark/auto-tuner/fused_moe/run/test_data", 
+    #                     precision=9,)
     
     # Track results for each block size
-    successful_configs = []
-    failed_configs = []
+    # successful_configs = []
+    # failed_configs = []
     
-    print(f"\nTesting {len(block_sizes_m)} different block sizes: {block_sizes_m}")
-    print("=" * 60)
+    # print(f"\nTesting {len(block_sizes_m)} different block sizes: {block_sizes_m}")
+    # print("=" * 60)
     
-    for block_size_m in block_sizes_m:
-        print(f"\n--- Testing BLOCK_SIZE_M = {block_size_m} ---")
+    # for block_size_m in block_sizes_m:
+    #     print(f"\n--- Testing BLOCK_SIZE_M = {block_size_m} ---")
         
-        # Create configuration for this block size
-        config = {
-            'BLOCK_SIZE_M': block_size_m, 
-            'BLOCK_SIZE_N': 64, 
-            'BLOCK_SIZE_K': 32, 
-            'GROUP_SIZE_M': 8
-        }
+    #     # Create configuration for this block size
+    #     config = {
+    #         'BLOCK_SIZE_M': block_size_m, 
+    #         'BLOCK_SIZE_N': 64, 
+    #         'BLOCK_SIZE_K': 32, 
+    #         'GROUP_SIZE_M': 8
+    #     }
         
-        try:
-            # Call moe_align_block_size for this block size
-            sorted_token_ids, expert_ids, num_tokens_post_padded = moe_align_block_size(
-                topk_ids, block_size_m, E
-            )
+    #     try:
+    #         # Call moe_align_block_size for this block size
+    #         sorted_token_ids, expert_ids, num_tokens_post_padded = moe_align_block_size(
+    #             topk_ids, block_size_m, E
+    #         )
             
-            # print(f"moe_align_block_size completed:")
-            # print(f"  - sorted_token_ids shape: {sorted_token_ids.shape}")
-            # print(f"  - expert_ids shape: {expert_ids.shape}")
-            # print(f"  - num_tokens_post_padded: {num_tokens_post_padded}")
+    #         # print(f"moe_align_block_size completed:")
+    #         # print(f"  - sorted_token_ids shape: {sorted_token_ids.shape}")
+    #         # print(f"  - expert_ids shape: {expert_ids.shape}")
+    #         # print(f"  - num_tokens_post_padded: {num_tokens_post_padded}")
             
-            # Create output tensor for this configuration
-            c = torch.zeros((M, topK, N), device=DEVICE, dtype=DTYPE)
+    #         # Create output tensor for this configuration
+    #         c = torch.zeros((M, topK, N), device=DEVICE, dtype=DTYPE)
             
-            # Run and verify the Triton kernel
-            triton_out, is_match = run_and_verify_triton_kernel(
-                a, b, c, sorted_token_ids, expert_ids,
-                num_tokens_post_padded, topk_ids.numel(), topK, config
-            )
+    #         # Run and verify the Triton kernel
+    #         triton_out, is_match = run_and_verify_triton_kernel(
+    #             a, b, c, sorted_token_ids, expert_ids,
+    #             num_tokens_post_padded, topk_ids.numel(), topK, config
+    #         )
             
-            if is_match:
-                print(f"✅ SUCCESS for BLOCK_SIZE_M = {block_size_m}")
-                successful_configs.append(block_size_m)
+    #         if is_match:
+    #             print(f"✅ SUCCESS for BLOCK_SIZE_M = {block_size_m}")
+    #             successful_configs.append(block_size_m)
                 
-                # Save the successful configuration data
-                output_dir = f"/home/yuhao/T_RVV/benchmark/auto-tuner/fused_moe/run/test_data"
-                print(f"Saving results for BLOCK_SIZE_M = {block_size_m} to {output_dir}...")
+    #             # Save the successful configuration data
+    #             output_dir = f"/home/yuhao/T_RVV/benchmark/auto-tuner/fused_moe/run/test_data"
+    #             print(f"Saving results for BLOCK_SIZE_M = {block_size_m} to {output_dir}...")
                 
-                save_matrices_to_txt(
-                    triton_out,           # Output from Triton kernel
-                    start_idx=3,
-                    output_dir=output_dir,
-                    prefix=f"matrix_BLOCK_SIZE_M_{block_size_m}",
-                )
+    #             save_matrices_to_txt(
+    #                 triton_out,           # Output from Triton kernel
+    #                 start_idx=3,
+    #                 output_dir=output_dir,
+    #                 prefix=f"matrix_BLOCK_SIZE_M_{block_size_m}",
+    #             )
                 
-                save_matrices_to_txt(
-                    sorted_token_ids,     # Processed token IDs
-                    expert_ids,           # Expert IDs for blocks
-                    start_idx=4,
-                    dtype="int",
-                    output_dir=output_dir,
-                    prefix=f"matrix_BLOCK_SIZE_M_{block_size_m}",
-                )
+    #             save_matrices_to_txt(
+    #                 sorted_token_ids,     # Processed token IDs
+    #                 expert_ids,           # Expert IDs for blocks
+    #                 start_idx=4,
+    #                 dtype="int",
+    #                 output_dir=output_dir,
+    #                 prefix=f"matrix_BLOCK_SIZE_M_{block_size_m}",
+    #             )
 
-            else:
-                print(f"❌ FAILURE for BLOCK_SIZE_M = {block_size_m}")
-                failed_configs.append(block_size_m)
+    #         else:
+    #             print(f"❌ FAILURE for BLOCK_SIZE_M = {block_size_m}")
+    #             failed_configs.append(block_size_m)
                 
-        except Exception as e:
-            print(f"❌ ERROR for BLOCK_SIZE_M = {block_size_m}: {str(e)}")
-            failed_configs.append(block_size_m)
-            import traceback
-            traceback.print_exc()
+    #     except Exception as e:
+    #         print(f"❌ ERROR for BLOCK_SIZE_M = {block_size_m}: {str(e)}")
+    #         failed_configs.append(block_size_m)
+    #         import traceback
+    #         traceback.print_exc()
     
-    # Final summary
-    print("\n" + "=" * 60)
-    print("FINAL SUMMARY")
-    print("=" * 60)
+    # # Final summary
+    # print("\n" + "=" * 60)
+    # print("FINAL SUMMARY")
+    # print("=" * 60)
     
-    if successful_configs:
-        print(f"✅ SUCCESSFUL configurations (BLOCK_SIZE_M): {successful_configs}")
-        print(f"   Data saved for {len(successful_configs)} configurations")
-    else:
-        print("❌ No configurations were successful")
+    # if successful_configs:
+    #     print(f"✅ SUCCESSFUL configurations (BLOCK_SIZE_M): {successful_configs}")
+    #     print(f"   Data saved for {len(successful_configs)} configurations")
+    # else:
+    #     print("❌ No configurations were successful")
     
-    if failed_configs:
-        print(f"❌ FAILED configurations (BLOCK_SIZE_M): {failed_configs}")
+    # if failed_configs:
+    #     print(f"❌ FAILED configurations (BLOCK_SIZE_M): {failed_configs}")
     
