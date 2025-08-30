@@ -5,7 +5,7 @@
         "VLEN": 256,
         "opt": "O2",
         "dynamic": false,
-        "mode": "single_iteration",
+        "mode": "accuracy",
         "copy2Gem5": false,
         "remote": {
             "enable": false,
@@ -128,6 +128,40 @@
         }
     },
     "fused_moe.py": {
+        "debug": true,
+        "vectorize": true,
+        "VLEN": 256,
+        "opt": "O2",
+        "dynamic": false,
+        "mode": "accuracy",
+        "copy2Gem5": false,
+        "remote": {
+            "enable": false,
+            "user": "yuhao",
+            "host": "10.32.44.164",
+            "dir": "/home/yuhao/triton_riscv_test/triton",
+            "_descri": "The dir would be extended to {dir}/auto-tuner",
+            "socket": "/tmp/ssh_ctrl_socket"
+        }
+    },
+    "test_acc.py": {
+        "debug": true,
+        "vectorize": true,
+        "VLEN": 256,
+        "opt": "O2",
+        "dynamic": false,
+        "mode": "accuracy",
+        "copy2Gem5": false,
+        "remote": {
+            "enable": false,
+            "user": "yuhao",
+            "host": "10.32.44.164",
+            "dir": "/home/yuhao/triton_riscv_test/triton",
+            "_descri": "The dir would be extended to {dir}/auto-tuner",
+            "socket": "/tmp/ssh_ctrl_socket"
+        }
+    },
+    "moe.py":{
         "debug": true,
         "vectorize": true,
         "VLEN": 256,

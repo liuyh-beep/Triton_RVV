@@ -67,9 +67,9 @@ class BuildConfig:
     opt_level: str = field(default="O2")
     opt_suffix: str = field(default="_O2")
     # Do not need riscv-v-vector-bits-min now, 
-    # it would be the same value as whatever zvlb extension is passed -march
+    # it would be the same value as whatever zvlb extension is passed to -march
     # For instance, -march=rv64gcv_zvl256b, the vector_bits_min is 256
-    # vector_bits_min: int = field(default=256) 
+
     kernel_source: str = field(default="")
     config_file: str = field(default="")
     lib_name: str = field(default="")
@@ -81,6 +81,8 @@ class BuildConfig:
     bin_dir: Path = field(default=Path())
     kernel_launcher_include_dir: Path = field(default=Path())
     kernel_launcher_src_dir: Path = field(default=Path())
+
+    clean_first: bool = field(default=False)
 
     # Computed values
     clangpp: str = field(default="")
@@ -133,6 +135,33 @@ class BuildConfig:
 
         # Initialize or load configs.json
         self.init_kernel_config_file()
+
+    def clean_auto_tuner_dirs(self, kernel_name: str) -> None:
+        """Clean auto-tuner directories for a specific kernel."""
+        # Setup the kernel-specific paths first
+        kernel_auto_tuner_dir = self.auto_tuner_dir / kernel_name
+        kernel_dump_dir = kernel_auto_tuner_dir / "dump"
+        kernel_bin_dir = kernel_auto_tuner_dir / "run" / "bin"
+        
+        def remove_dir_contents(directory: Path) -> None:
+            if directory.exists():
+                print(f"Cleaning directory: {directory}")
+                try:
+                    for item in directory.glob("*"):
+                        if item.is_file():
+                            item.unlink()
+                        elif item.is_dir():
+                            from shutil import rmtree
+                            rmtree(item)
+                    print(f"Successfully cleaned {directory}")
+                except Exception as e:
+                    print(f"Error while cleaning {directory}: {e}")
+            else:
+                print(f"Directory does not exist: {directory}")
+
+        # Clean the auto-tuner specific directories
+        remove_dir_contents(kernel_bin_dir)
+        remove_dir_contents(kernel_dump_dir)
 
     def get_relative_path(self, full_path: Path) -> str:
         """Convert absolute path to relative path from auto-tuner directory."""
@@ -187,7 +216,7 @@ class BuildConfig:
 
 def run_command(cmd: str, check: bool = True) -> Tuple[int, str, str]:
     """Run a shell command and return its exit code, stdout and stderr."""
-    #print(f"Running: {cmd}")
+    print(f"Running: {cmd}")
     process = subprocess.Popen(
         cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
@@ -357,23 +386,14 @@ def setup_directories(config: BuildConfig) -> None:
     create_dir_if_not_exists(config.lib_dir)
 
 
-'''
-clang++ --target=riscv64-unknown-linux-gnu \
-        --sysroot=${RISCV_GNU_TOOLCHAIN_DIR}/sysroot \
-        --gcc-toolchain=${RISCV_GNU_TOOLCHAIN_DIR} \
-        -march=rv64gcv_zvl256b -mabi=lp64d \
-        -O2 -static -g \
-        -o ${BIN_DIR}/matmul_vector.elf src/main.cpp
-'''
-
 def configure_compiler_flags(config: BuildConfig) -> None:
     """Configure compiler flags."""
     # Debug flags
     debug_flag = "-g -fno-omit-frame-pointer " if config.debug_mode else ""
 
-    #-march=rv64gcv_zvl256b
+    #-march=rv64gcv_zvl256b_zicbop (zicbop is for prefetch)
     # Architecture flags
-    march = f"rv64gcv_zvl{str(config.VLEN)}b  -mllvm -force-tail-folding-style=data-with-evl -mllvm -prefer-predicate-over-epilogue=predicate-dont-vectorize" if config.vectorize else "rv64gc"
+    march = f"rv64gcv_zvl{str(config.VLEN)}b_zicbop  -mllvm -force-tail-folding-style=data-with-evl -mllvm -prefer-predicate-over-epilogue=predicate-dont-vectorize" if config.vectorize else "rv64gc_zicbop"
 
     # Build complete CLANGPP command
     config.clangpp = (
@@ -398,6 +418,10 @@ def configure_compiler_flags(config: BuildConfig) -> None:
 def build_c_kernel(config: BuildConfig) -> None:
     """Build C kernel."""
     config.kernel_enable = "C_KERNEL_ENABLE"
+
+    if config.clean_first:
+        kernel_name = os.path.basename(config.c_kernel).replace(".cpp", "")
+        config.clean_auto_tuner_dirs(kernel_name)
 
     # Build support library
     run_command(
@@ -456,12 +480,21 @@ def find_block_size_variants(kernel_aux_file_dir: Path) -> list:
 
 
 def build_triton_kernel(config: BuildConfig) -> None:
-    
-    if config.clean_first:
-        config.clean()
-
     """Build Triton kernel."""
     config.kernel_enable = "TRITON_KERNEL_ENABLE"
+    kernel_name = os.path.basename(config.triton_kernel).replace(".py", "")
+
+    # Clean if requested - add this section
+    if config.clean_first:
+        # Determine the actual kernel directory name based on mode
+        if config.mode == 1:
+            actual_kernel_name = kernel_name + "_single_block"
+        elif config.mode == 2:
+            actual_kernel_name = kernel_name + "_single_iteration"
+        else:
+            actual_kernel_name = kernel_name
+        
+        config.clean_auto_tuner_dirs(actual_kernel_name)
 
     # Build support library
     run_command(
@@ -524,6 +557,7 @@ def build_triton_kernel(config: BuildConfig) -> None:
         variant_dirs = [base_kernel_aux_file_dir]  # fallback to base directory
     
     total_variants = len(variant_dirs)
+
     for idx, kernel_aux_file_dir in enumerate(variant_dirs, 1):
         # Set the flag for the last variant
         config.is_last_variant = (idx == total_variants)
@@ -564,50 +598,96 @@ def build_triton_kernel(config: BuildConfig) -> None:
 
         # Setup auto-tuner directories for this kernel if not already set up
         if not hasattr(config, 'kernel_auto_tuner_dir'):
-            config.setup_auto_tuner_dirs(kernel_name + "_single_block" if config.mode == 1 else kernel_name if config.mode == 0 else kernel_name + "_single_iteration")
+            config.setup_auto_tuner_dirs(kernel_name + "_single_block" if config.mode == 1 
+                                         else kernel_name if config.mode == 0 
+                                         else kernel_name + "_single_iteration")
 
-        # Process LLVM IR
-        kernel_ir = kernel_aux_file_dir / f"{kernel_name}_kernel.llir"
+        # Find all LLVM IR files in the kernel_aux_file_dir
+        llir_files = list(kernel_aux_file_dir.glob("*.llir"))
+        if not llir_files:
+            print(f"Warning: No .llir files found in {kernel_aux_file_dir}")
+            continue
+        
+        print(f"Found {len(llir_files)} LLVM IR files to process")
+        
+        # Process each LLVM IR file - convert to bitcode
+        bitcode_files = []
+        for llir_file in llir_files:
+            llir_basename = llir_file.stem  # filename without extension
+            bc_file = out_obj_dir / f"{llir_basename}.bc"
+            
+            print(f"Converting {llir_file.name} to bitcode")
+            
+            # Convert LLVM IR to bitcode
+            run_command(
+                f"{config.as_tool} -o {bc_file} {llir_file}"
+            )
+            
+            bitcode_files.append(str(bc_file))
+
+        # Link all bitcode files into one combined bitcode file
+        combined_bc_file = out_obj_dir / f"{kernel_name}{config.blk_values}_combined.bc"
+        bitcode_files_str = " ".join(bitcode_files)
+        
+        print(f"Linking {len(bitcode_files)} bitcode files into combined bitcode")
         run_command(
-            f"{config.as_tool} -o {out_obj_dir}/{kernel_name}_kernel.bc {kernel_ir}"
+            f"llvm-link -o {combined_bc_file} {bitcode_files_str}"
         )
-
-        # Generate assembly output
+        
+        # Generate assembly from combined bitcode
+        kernel_src_asm = config.kernel_dump_dir / f"{config.vector_suffix}_{kernel_name}{config.blk_values}_kernel_src.s"
         run_command(
-            f"{config.clangpp} -fPIC -S {out_obj_dir}/{kernel_name}_kernel.bc "
-            f"-o {config.kernel_dump_dir}/{config.vector_suffix}_{kernel_name}{config.blk_values}_kernel_src.s"
+            f"{config.clangpp} -fPIC -S {combined_bc_file} -o {kernel_src_asm}"
         )
-        print(
-            f"The ASM code of kernel part is at {config.kernel_dump_dir}/{config.vector_suffix}_{kernel_name}{config.blk_values}_kernel_src.s"
-        )
-
-        # Compile kernel
+        print(f"Generated kernel assembly at: {kernel_src_asm}")
+        
+        # Compile combined bitcode to single object file
+        combined_obj_file = out_obj_dir / f"{kernel_name}{config.blk_values}_kernel.o"
         run_command(
-            f"{config.clangpp} -fPIC -c {out_obj_dir}/{kernel_name}_kernel.bc "
-            f"-o {out_obj_dir}/{kernel_name}.o"
+            f"{config.clangpp} -fPIC -c {combined_bc_file} -o {combined_obj_file}"
         )
+        
+        kernel_object_files = [str(combined_obj_file)]
 
-        # Compile launcher
-        kernel_launcher = kernel_aux_file_dir / f"{kernel_name}_kernel_launcher.cpp"
-        launcher_name = os.path.basename(str(kernel_launcher)).replace(".cpp", "")
+        # Find and compile all launcher.cpp files
+        launcher_files = list(kernel_aux_file_dir.glob("*launcher.cpp"))
+        if not launcher_files:
+            print(f"Warning: No launcher.cpp files found in {kernel_aux_file_dir}")
+            continue
 
+        print(f"Found {len(launcher_files)} launcher files to process")
+        
+        launcher_object_files = []
+        for launcher_file in launcher_files:
+            launcher_basename = launcher_file.stem  # filename without extension
+            launcher_obj = out_obj_dir / f"{launcher_basename}.o"
+            
+            print(f"Processing {launcher_file.name}")
+            
+            run_command(
+                f"{config.clangpp} -I {config.build_dir}/../../env_build/include "
+                f"-fPIC -I {config.kernel_launcher_include_dir} -c {launcher_file} "
+                f"-o {launcher_obj}"
+            )
+            
+            launcher_object_files.append(str(launcher_obj))
+
+        # Create static library combining all kernel objects and launcher objects
+        lib_file = config.lib_dir / f"libtriton{kernel_name}{config.blk_values}.a"
+        all_objects = launcher_object_files + kernel_object_files
+        objects_str = " ".join(all_objects)
+        
         run_command(
-            f"{config.clangpp} -I {config.build_dir}/../../env_build/include "
-            f"-fPIC -I {config.kernel_launcher_include_dir} -c {kernel_launcher} "
-            f"-o {out_obj_dir}/{launcher_name}.o"
+            f"{config.ar} rcs {lib_file} {objects_str}"
         )
-
-        # Create library
-        run_command(
-            f"{config.ar} rcs {config.lib_dir}/libtriton{kernel_name}{config.blk_values}.a "
-            f"{out_obj_dir}/{launcher_name}.o {out_obj_dir}/{kernel_name}.o"
-        )
+        
+        print(f"Created static library: {lib_file}")
+        print(f"Library contains: {len(kernel_object_files)} kernel objects + {len(launcher_object_files)} launcher objects")
 
         config.lib_name = f"triton{kernel_name}{config.blk_values}"
         
         # Build final executable for this variant
         build_final_executable(config)
-
 
 def setup_remote_connection(config: BuildConfig) -> None:
     """Set up SSH master connection for remote transfers."""
@@ -632,7 +712,6 @@ def setup_remote_connection(config: BuildConfig) -> None:
         print(f"Error setting up SSH connection: {e}")
         sys.exit(1)
 
-
 def cleanup_remote_connection(config: BuildConfig) -> None:
     """Clean up SSH master connection."""
     if not config.transfer_to_remote:
@@ -646,7 +725,6 @@ def cleanup_remote_connection(config: BuildConfig) -> None:
         print("SSH master connection closed")
     except Exception as e:
         print(f"Error cleaning up SSH connection: {e}")
-
 
 def transfer_to_remote(config: BuildConfig, kernel_name: str) -> None:
     """Transfer entire kernel directory to remote server."""
@@ -749,7 +827,7 @@ def build_final_executable(config: BuildConfig) -> None:
             print(f"Error copying file to gem5: {e}")
 
 
-def parse_args() -> Tuple[str, str, str]:
+def parse_args() -> Tuple[str, str, str, bool]:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Build kernel from source")
 
@@ -757,8 +835,11 @@ def parse_args() -> Tuple[str, str, str]:
     kernel_group.add_argument("-t", "--triton", help="Path to the Triton Python file")
     kernel_group.add_argument("-c", "--c-kernel", help="Path to the C++ kernel file")
 
+    cur_path = os.path.dirname(os.path.abspath(__file__))
+    default_config_path = os.path.join(cur_path, "..", "benchmark", "config.json")
+
     parser.add_argument(
-        "-j", "--config", required=True, help="Path to the JSON configuration file"
+        "-j", "--config", default=default_config_path, help="Path to the JSON configuration file"
     )
 
     parser.add_argument(

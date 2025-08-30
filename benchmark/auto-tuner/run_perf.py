@@ -171,11 +171,11 @@ def check_elf_output(elf_path: str) -> Tuple[bool, str, str, str]:
             kernel_time = kernel_time_match.group(1)
             
         # Check if output contains "out OK"
-        not_correct = "out NOT OK" in stdout
+        not_correct = "NOT OK" in stdout
         
         if not_correct:
             print(f"ELF output is INCORRECT: {elf_path}")
-            if "out NOT OK" in stdout:
+            if "NOT OK" in stdout:
                 print("Output verification failed")
             else:
                 print("Unable to determine output correctness")
@@ -215,9 +215,9 @@ def run_perf_stat(elf_path: str) -> Tuple[str, str, str]:
     env['PYTHONUNBUFFERED'] = '1'
 
     # Combined all event groups into one command
-    all_events = ('u_mode_cycle,eu_vfpu_full,vidu_total_cycle,vector_micro_op,'
-                 'vector_load_inst,vector_store_inst,vector_inst,'
-                 'l1d_load_miss,l1d_load_access,l1d_access,l1d_miss')
+    all_events = ('u_mode_cycle:u,eu_vfpu_full:u,vidu_total_cycle:u,vector_micro_op:u,'
+                 'vector_load_inst:u,vector_store_inst:u,vector_inst:u,'
+                 'l1d_load_miss:u,l1d_load_access:u,l1d_access:u,l1d_miss:u')
                  # 'l2_access,l2_miss,l2_load_access,l2_store_access'
 
     # Modify perf command to capture both program output and perf stats
@@ -278,6 +278,7 @@ def parse_perf_output(stdout: str, perf_output: str, stderr: str) -> Dict[str, A
             metrics[metric] = int(value)
         else:
             metrics[metric] = 0  # Set to 0 if not found
+            print(f"metric {metric} is zero.")
 
     # Parse total time from perf output
     time_match = re.search(r'([\d.]+) seconds time elapsed', perf_output)
@@ -465,11 +466,11 @@ def run_perf_record_report(perf_data_path: str, perf_report_path: str, elf_path:
     record_cmd = f"perf record -o {perf_data_path} -e {cache_event} -F 4001 {elf_path} "
     returncode, _, stderr = run_command(record_cmd, check=False)
 
-    kernel_name = kernel_name.removesuffix("_uncomplete")
     if returncode != 0:
         print(f"Warning: perf record command failed: {stderr}")
         return {"error": f"perf record failed: {stderr}"}
 
+    kernel_name = kernel_name.removesuffix("_uncomplete")
     report_cmd = f"perf report -i {perf_data_path} -S {kernel_name}_kernel --show-total-period --stdio > {perf_report_path}"
     returncode, _, stderr = run_command(report_cmd, check=False)
 
@@ -570,10 +571,9 @@ def extract_perf_metrics(report_content: str, cache_events_str: str) -> Dict[str
     
     # Make sure all target events are in the metrics, even if not found in the report
     for event in cache_events:
-        event_with_suffix = f"{event}:u"
-        if event_with_suffix not in metrics['events']:
-            print(f"Event {event_with_suffix} not found in report, adding with zero values")
-            metrics['events'][event_with_suffix] = {
+        if event not in metrics['events']:
+            print(f"Event {event} not found in report, adding with zero values")
+            metrics['events'][event] = {
                 'overhead_percent': 0.0,
                 'period': 0
             }
@@ -666,7 +666,7 @@ def main():
                 l2_metrics = None
                 if perf_data_path and perf_report_path:
                     # Define L2 cache events to profile
-                    cache_events = "l2_access,l2_miss,l2_load_access,l2_store_access"
+                    cache_events = "l2_access:u,l2_miss:u,l2_load_access:u,l2_store_access:u"
                     l2_metrics = run_perf_record_report(perf_data_path, perf_report_path, elf_path, kernel_name, cache_events)
                     if 'error' in l2_metrics:
                         print(f"Warning: L2 cache profiling failed: {l2_metrics['error']}")
@@ -692,3 +692,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

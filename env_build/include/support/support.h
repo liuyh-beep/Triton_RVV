@@ -16,7 +16,8 @@
 unsigned int next_power_of_2(unsigned int n);
 
 template <typename T = float>
-bool check_tensor(T *a, T *b, int n, const char *label, float threshold = 1e-4) {
+bool check_tensor(T *a, T *b, int n, const char *label, float threshold = 1e-5) {
+  printf("Threshold=%e\n", threshold);
   bool ok = true;
 
   int j = 0;
@@ -59,7 +60,7 @@ bool readMatrix(const char* filename, int* matrix, int& M, int& N);
 bool writeMatrix(const char* filename, const float* data, int rows, int cols);
 
 #define PRINT_KERNEL_RUNNING_TIME(Kernel, Value)                               \
-  std::cerr << "Running " << Kernel << " Time: " << Value << " s" << std::endl;
+  std::cerr << "Running " << Kernel << " Average Time: " << Value << " s" << std::endl;
 
 const std::string TRITON_KERNEL = "Triton Kernel";
 const std::string C_KERNEL = "C Kernel";

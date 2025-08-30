@@ -1,0 +1,295 @@
+diff --git a/python/triton/runtime/autotuner.py b/python/triton/runtime/autotuner.py
+index 13890824..7f06a770 100755
+--- a/python/triton/runtime/autotuner.py
++++ b/python/triton/runtime/autotuner.py
+@@ -135,10 +135,23 @@ class Autotuner(KernelInterface):
+         current = dict(meta, **config.all_kwargs())
+         full_nargs = {**self.nargs, **current}
+ 
++        TUNING_SHAPE_CONFIG=""
++        # TUNING_SHAPE_CONFIG=os.getenv("ENABLE_AUTOTUNING")
++        for k in config.kwargs.keys():
++            if isinstance(config.all_kwargs()[k], int) and not isinstance(config.all_kwargs()[k], bool):
++                TUNING_SHAPE_CONFIG += "_" + str(config.all_kwargs()[k])
++        os.environ["TUNING_SHAPE_CONFIG"] = TUNING_SHAPE_CONFIG
++
++        # launcher_src_dir = os.getenv("KERNEL_AUX_FILE_DIR")
++        # launcher_src_dir += TUNING_SHAPE_CONFIG
++        # os.makedirs(launcher_src_dir, mode=0o777, exist_ok=True)
++        # os.environ["MLIR_DUMP_PATH"] = os.path.join(launcher_src_dir, "dumped.mlir")
++
+         def kernel_call():
+-            if config.pre_hook:
+-                config.pre_hook(full_nargs)
+-            self.pre_hook(full_nargs)
++            # if config.pre_hook:
++            #     config.pre_hook(full_nargs)
++            # self.pre_hook(full_nargs)
++
+             try:
+                 self.fn.run(
+                     *args,
+@@ -154,7 +167,9 @@ class Autotuner(KernelInterface):
+             self.post_hook(full_nargs, exception=None)
+ 
+         try:
+-            return self.do_bench(kernel_call, quantiles=(0.5, 0.2, 0.8))
++            # return self.do_bench(kernel_call, quantiles=(0.5, 0.2, 0.8))
++            kernel_call()
++            return [float("inf"), float("inf"), float("inf")]
+         except (OutOfResources, CompileTimeAssertionFailure, PTXASError) as e:
+             if verbose:
+                 print(f"Autotuning failed with {e}")
+@@ -205,6 +220,7 @@ class Autotuner(KernelInterface):
+             }), file_name, binary=False)
+ 
+     def run(self, *args, **kwargs):
++        
+         self.nargs = dict(zip(self.arg_names, args))
+         used_cached_result = True
+         if len(self.configs) > 1:
+@@ -237,20 +253,26 @@ class Autotuner(KernelInterface):
+             config = self.cache[key]
+         else:
+             config = self.configs[0]
+-        self.best_config = config
+-        if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
+-            print(f"Triton autotuning for function {self.base_fn.__name__} finished after "
+-                  f"{self.bench_time:.2f}s; best config selected: {self.best_config};")
+-        if config.pre_hook is not None:
+-            full_nargs = {**self.nargs, **kwargs, **config.all_kwargs()}
+-            config.pre_hook(full_nargs)
+-        ret = self.fn.run(
+-            *args,
+-            **kwargs,
+-            **config.all_kwargs(),
+-        )
++        # self.best_config = config
++        # if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
++        #     print(f"Triton autotuning for function {self.base_fn.__name__} finished after "
++        #           f"{self.bench_time:.2f}s; best config selected: {self.best_config};")
++
++        # The above benchmark() is to get the auto-tuning time for different configs, and the input/output data is not so important
++        # while the following self.fn.run() is to execute the kernel with real application data under the best config whose execution time 
++        # is the minimum.
++
++        # if config.pre_hook is not None:
++        #     full_nargs = {**self.nargs, **kwargs, **config.all_kwargs()}
++        #     config.pre_hook(full_nargs)
++        os.environ.pop('TUNING_SHAPE_CONFIG', None)
++        # _ = self.fn.run(
++        #     *args,
++        #     **kwargs,
++        #     **config.all_kwargs(),
++        # )
+         self.nargs = None
+-        return ret
++        # return ret
+ 
+     def prune_configs(self, kwargs: Dict) -> List[Config]:
+         pruned_configs = self.configs
+diff --git a/python/triton/runtime/jit.py b/python/triton/runtime/jit.py
+index f955b723..429752e2 100755
+--- a/python/triton/runtime/jit.py
++++ b/python/triton/runtime/jit.py
+@@ -624,8 +624,15 @@ class JITFunction(KernelInterface[T]):
+                     f"Global variable {name} has changed since we compiled this kernel, from {val} to {newVal}")
+ 
+         launcher_src_dir = os.getenv("KERNEL_AUX_FILE_DIR")
+-        if launcher_src_dir is not None:
++
++        block_shape = os.getenv("TUNING_SHAPE_CONFIG")
++        # if block_shape is None:
++        #     block_shape = ""
++
++        if launcher_src_dir is not None and block_shape is not None:
++            launcher_src_dir += block_shape
+             os.makedirs(launcher_src_dir, mode=0o777, exist_ok=True)
++
+             ttcir_path = os.path.join(launcher_src_dir, kernel.name + ".ttcir")
+             tttcir_path = os.path.join(launcher_src_dir, kernel.name + ".tttcir")
+             llir_path = os.path.join(launcher_src_dir, kernel.name + ".llir")
+diff --git a/third_party/cpu/backend/compiler.py b/third_party/cpu/backend/compiler.py
+index ca86e09a..c76b724e 100755
+--- a/third_party/cpu/backend/compiler.py
++++ b/third_party/cpu/backend/compiler.py
+@@ -267,6 +267,7 @@ class CPUBackend(BaseBackend):
+             cpu.passes.ttcpuir.add_math_to_vec_lib(pm, vec_lib, self.cpu_features)
+ 
+         passes.convert.add_math_to_llvmir(pm)
++
+         cpu.passes.ttcpuir.add_math_to_libm(pm)
+         cpu.passes.ttcpuir.add_vector_to_llvmir(pm, options.enable_fast_math)
+         cpu.passes.ttcpuir.add_memref_to_llvmir(pm)
+diff --git a/third_party/cpu/backend/driver.py b/third_party/cpu/backend/driver.py
+index 7c083b6e..35a70bbb 100755
+--- a/third_party/cpu/backend/driver.py
++++ b/third_party/cpu/backend/driver.py
+@@ -4,6 +4,7 @@ import importlib
+ import importlib.resources
+ import tempfile
+ import time
++import json
+ 
+ import triton
+ import triton._C
+@@ -37,20 +38,34 @@ if os.path.exists(sys_lib_dir):
+     library_dirs.append(sys_lib_dir)
+ 
+ 
+-def compile_module_from_src(inc, src, src_host, kernel_name):
++def compile_module_from_src(inc, src, src_host, kernel_name, kernel_blk_constants):
+     launcher_include_dir = os.getenv("KERNEL_LAUNCHER_INCLUDE_DIR")
+     launcher_src_dir = os.getenv("KERNEL_AUX_FILE_DIR")
++
++    block_shape = os.getenv("TUNING_SHAPE_CONFIG")
++    if block_shape is None:
++        block_shape =""
++
+     if launcher_include_dir is None:
+        launcher_include_dir = tempfile.mkdtemp()
+-
+     os.makedirs(launcher_include_dir, mode=0o777, exist_ok=True)
+ 
+     if launcher_src_dir is None:
+        launcher_src_dir = launcher_include_dir
+ 
++    launcher_src_dir += block_shape
+     os.makedirs(launcher_src_dir, mode=0o777, exist_ok=True)
+ 
+-    # print("launcher src dir: ", launcher_src_dir)
++    # os.environ["MLIR_DUMP_PATH"] = os.path.join(launcher_src_dir, "dumped.mlir")
++    # auto_tune_reproducer = os.environ.get("TRITON_AUTO_TUNE_REPRODUCER", None) == "1"
++    # if auto_tune_reproducer:
++    #     os.environ["TRITON_REPRODUCER_PATH"] = os.path.join(launcher_src_dir, "reproducer.mlir")
++
++    blk_constants_path = os.path.join(launcher_src_dir, "blk_constants.json")
++    
++    with open(blk_constants_path, 'w') as f:
++        json.dump(kernel_blk_constants, f, indent=4)
++
+     inc_path = os.path.join(launcher_include_dir, kernel_name+"_launcher.h")
+     with open(inc_path, "w") as f:
+         f.write(inc)
+@@ -133,7 +148,7 @@ def ty_to_cpp(ty):
+     }[ty]
+ 
+ 
+-def make_launcher(constants, signature, ids, kernel_name):
++def make_launcher(constants, signature, ids, kernel_name, constexprs_arg_names):
+     # Record the end of regular arguments;
+     # subsequent arguments are architecture-specific descriptors.
+     def _serialize_signature(sig):
+@@ -179,15 +194,31 @@ def make_launcher(constants, signature, ids, kernel_name):
+     signature = ','.join(map(_serialize_signature, signature.values()))
+     signature = list(filter(bool, signature.split(',')))
+     signature = {i: s for i, s in enumerate(signature)}
+-
++    
+     arg_decls = ', '.join(f"{ty_to_cpp(ty)} arg{i}" for i, ty in signature.items() if ty != "constexpr")
+ 
+     arg_ptrs_list = ', '.join(f"&arg{i}" for i in signature.keys())
+     kernel_fn_args = [i for i, ty in signature.items() if i not in constants and ty != "constexpr"]
++    # kernel_fn_args: non-constexpr args
+     signature_without_constexprs = {i: ty for i, ty in signature.items() if ty != "constexpr"}
+     kernel_fn_args_list = ', '.join(f"arg{i}" for i in kernel_fn_args)
+     kernel_fn_arg_types = ', '.join([f"{ty_to_cpp(signature[i])}" for i in kernel_fn_args] + ["uint32_t"] * 6)
+ 
++    kernel_blk_constants = {arg_name: constants[(arg_id,)] for arg_id, arg_name in constexprs_arg_names.items() 
++                         if isinstance(constants[(arg_id,)], int) and not isinstance(constants[(arg_id,)], bool)}
++    
++    kernel_constants_declare = "".join(
++        f"extern const int {kernel_name}_{arg_name};\n" 
++        for arg_id, arg_name in constexprs_arg_names.items()
++        if isinstance(constants[(arg_id,)], int) and not isinstance(constants[(arg_id,)], bool)
++    )
++    
++    kernel_constants_definition = "".join(
++        f"const int {kernel_name}_{arg_name} = {constants[(arg_id,)]};\n" 
++        for arg_id, arg_name in constexprs_arg_names.items()
++        if isinstance(constants[(arg_id,)], int) and not isinstance(constants[(arg_id,)], bool)
++    )
++
+     # generate glue code
+     src_host = f"""
+ #include <algorithm>
+@@ -405,6 +436,8 @@ extern "C"{{
+ void({kernel_name})({kernel_fn_arg_types});
+ }}
+ 
++{kernel_constants_declare}
++
+ void {kernel_name}_wrap(uint32_t gridX, uint32_t gridY, uint32_t gridZ, int num_threads,
+                         {kernel_name}_kernel_ptr_t kernel_ptr {', ' + arg_decls if len(arg_decls) > 0 else ''});
+     """
+@@ -417,6 +450,8 @@ void {kernel_name}_wrap(uint32_t gridX, uint32_t gridY, uint32_t gridZ, int num_
+ #include <optional>
+ #include <stdio.h>
+ 
++{kernel_constants_definition}
++
+ void {kernel_name}_wrap(uint32_t gridX, uint32_t gridY, uint32_t gridZ, int num_threads, {kernel_name}_kernel_ptr_t kernel_ptr {', ' + arg_decls if len(arg_decls) > 0 else ''}) {{
+     // TODO: Consider using omp collapse(3) clause for simplicity?
+     size_t N = gridX * gridY * gridZ;
+@@ -429,10 +464,15 @@ void {kernel_name}_wrap(uint32_t gridX, uint32_t gridY, uint32_t gridZ, int num_
+ #ifdef _OPENMP
+     omp_max_threads = omp_get_max_threads();
+ #endif // _OPENMP
+-    int max_threads = (num_threads > 0) ? num_threads : omp_max_threads;
++    int max_threads = (num_threads == 0) ? omp_max_threads : num_threads;
++    if(max_threads < 0){{
++        const auto [x, y, z] = all_grids[0];
++        (*kernel_ptr)({kernel_fn_args_list + ', ' if len(kernel_fn_args) > 0 else ''} x, y, z, gridX, gridY, gridZ);
++        return;
++    }}
+ 
+     // Don't pay OMP overhead price when a single thread is used.
+-    if (max_threads == 1) {{
++    else if (max_threads == 1) {{
+         for (size_t i = 0; i < N; ++i) {{
+         const auto [x, y, z] = all_grids[i];
+         (*kernel_ptr)({kernel_fn_args_list + ', ' if len(kernel_fn_args) > 0 else ''} x, y, z, gridX, gridY, gridZ);
+@@ -451,7 +491,7 @@ void {kernel_name}_wrap(uint32_t gridX, uint32_t gridY, uint32_t gridZ, int num_
+ }}
+     """
+ 
+-    return inc, src, src_host
++    return inc, src, src_host, kernel_blk_constants
+ 
+ 
+ class CPULauncher(object):
+@@ -459,11 +499,25 @@ class CPULauncher(object):
+     def __init__(self, src, metadata, kernel_name):
+         ids = {"ids_of_const_exprs": src.fn.constexprs if hasattr(src, "fn") else tuple()}
+         constants = src.constants if hasattr(src, "constants") else dict()
++
+         cst_key = lambda i: src.fn.arg_names.index(i) if isinstance(i, str) else i
++
++        processed_constants = {
++                key[0] if isinstance(key, tuple) else key: value 
++                for key, value in constants.items()
++            }
++
++        constexprs_arg_names = {
++            const_idx: src.fn.arg_names[const_idx]
++            for const_idx in src.fn.constexprs
++            if const_idx < len(src.fn.arg_names)
++        }
++        
+         constants = {cst_key(key): value for key, value in constants.items()}
++
+         signature = {cst_key(key): value for key, value in src.signature.items()}
+-        inc, src, src_host = make_launcher(constants, signature, ids, kernel_name)
+-        mod = compile_module_from_src(inc, src, src_host, kernel_name) #"__triton_cpu_launcher"
++        inc, src, src_host, kernel_blk = make_launcher(constants, signature, ids, kernel_name, constexprs_arg_names)
++        mod = compile_module_from_src(inc, src, src_host, kernel_name, kernel_blk) #"__triton_cpu_launcher"
+         self.launch = mod.launch
+ 
+     def __call__(self, *args, **kwargs):
+diff --git a/third_party/sleef b/third_party/sleef
+index 93f04d86..d28232a3 160000
+--- a/third_party/sleef
++++ b/third_party/sleef
+@@ -1 +1 @@
+-Subproject commit 93f04d869471ce4d007abaebb8c6a7bc62749f61
++Subproject commit d28232a309e06bcb75e9fb0f6262d9251739fd1e

@@ -21,10 +21,10 @@ using std::chrono::high_resolution_clock;
 using std::chrono::milliseconds;
 
 int main(int argc, char *argv[]) {
-  int M = 512;
-  int N = 512;
-  int K = 512;
-  int RUN_COUNT = 20;
+  int M = 1024;
+  int N = 1024;
+  int K = 1024;
+  int RUN_COUNT = 5;
 
   if (argc >= 2) {
     std::vector<int> Shape = splitStringToInts(argv[1]);
@@ -97,8 +97,20 @@ int main(int argc, char *argv[]) {
 #ifdef SINGLE_ITERATION
   printf("Single iteration mode enabled, num_thread = %d\n", num_thread);
 #endif
+
+  matmul_kernel_wrap(
+    ceil(1.0 * M / matmul_kernel_BLOCK_SIZE_M) * ceil(1.0 * N / matmul_kernel_BLOCK_SIZE_N), 1, 1,
+         num_thread, matmul_kernel, arg0, arg1, real_out, M, N, K, K, N, N);
+
+  // Check accuracy after first run
+#ifdef CHECK_ACCURACY
+  printf("Check correctness after first run...\n");
+  check_tensor(ref_out, real_out, M * N, "out");
+#endif
+  memset(real_out, 0, M * N * sizeof(float));
+  
   high_resolution_clock::time_point beginTime = high_resolution_clock::now();
-  for (int i = 0; i < RUN_COUNT; i++) {
+  for (int i = 1; i < RUN_COUNT; i++) {
     matmul_kernel_wrap(
       ceil(1.0 * M / matmul_kernel_BLOCK_SIZE_M) * ceil(1.0 * N / matmul_kernel_BLOCK_SIZE_N), 1, 1,
            num_thread, matmul_kernel, arg0, arg1, real_out, M, N, K, K, N, N);
@@ -111,15 +123,22 @@ int main(int argc, char *argv[]) {
       endTime - beginTime;
   /// NOTE: Format running time to generate performance report easily
   PRINT_KERNEL_RUNNING_TIME(TRITON_KERNEL,
-                            triton_correlation_time_interval.count())
+                            triton_correlation_time_interval.count() / RUN_COUNT)
   
 #endif
 
 // c kernel
 #ifdef C_KERNEL_ENABLE
 
+  matmul(arg0, arg1, real_out, M, N, K);
+  
+  // Check accuracy after first run
+#ifdef CHECK_ACCURACY
+  check_tensor(ref_out, real_out, M * N, "out");
+#endif
+
   high_resolution_clock::time_point beginTime = high_resolution_clock::now();
-  for (int i = 0; i < RUN_COUNT; i++) {
+  for (int i = 1; i < RUN_COUNT; i++) {
     matmul(arg0, arg1, real_out, M, N, K);
   }
   high_resolution_clock::time_point endTime = high_resolution_clock::now();
@@ -130,15 +149,11 @@ int main(int argc, char *argv[]) {
   std::chrono::duration<double> c_correlation_time_interval =
       endTime - beginTime;
   /// NOTE: Format running time to generate performance report easily
-  PRINT_KERNEL_RUNNING_TIME(C_KERNEL, c_correlation_time_interval.count())
-#endif
-
-#ifdef CHECK_ACCURACY
-  check_tensor(ref_out, real_out, M * N, "out");
+  PRINT_KERNEL_RUNNING_TIME(C_KERNEL, c_correlation_time_interval.count() / RUN_COUNT)
 #endif
 
 
-// #ifdef KEEP_TEST_DATA
+#ifdef KEEP_TEST_DATA
   char filename[256];
   bool success = true;
 
@@ -159,7 +174,7 @@ int main(int argc, char *argv[]) {
   }
   if(!success)
      printf("Warning: Some matrices were not saved successfully\n");
-// #endif
+#endif
 
   free(arg0);
   free(arg1);
