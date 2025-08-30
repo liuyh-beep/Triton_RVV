@@ -146,8 +146,8 @@ benchmark/auto-tuner/matmul
     |   |-- perf_data
     |   `-- perf_stats.csv
     `-- test_data # This directory is necessary, 
-    # which should save test data into TXT files, 
-    # and above ELF would read from these TXT when running
+                  # which should save test data into TXT files, 
+                  # and above ELF would read from these TXT when running
 ```
 
 ## Transfer to remote
