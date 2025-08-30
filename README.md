@@ -1,6 +1,8 @@
 # Introduction
 
-This branch enables auto-tuning for `BLOCK_SIZE` parameters which are used in kernel functions. After writting a new triton kernel, we can use the Triton's auto-tuning function to config all META data(like `BLOCK_SIZE: tl.constexpr`). And all `BLOCK` parameters would be writtern to its kernel header(e.g. `benchmark/src/launcher/include/matmul_kernel_launcher.h`).
+This repository is a mapping from official Triton CPU to RVV with the purpose of obtaining the impact of block size on RVV. `auto_tuner.patch` is the modification on official Triton CPU for auto-tuning and other necessary components.
+
+This enables auto-tuning for `BLOCK_SIZE` parameters which are used in kernel functions. After writting a new triton kernel, we can use the Triton's auto-tuning function to config all META data(like `BLOCK_SIZE: tl.constexpr`). And all `BLOCK` parameters would be writtern to its kernel header(e.g. `benchmark/src/launcher/include/matmul_kernel_launcher.h`).
 
 # Workflow
 
@@ -146,8 +148,8 @@ benchmark/auto-tuner/matmul
     |   |-- perf_data
     |   `-- perf_stats.csv
     `-- test_data # This directory is necessary, 
-    # which should save test data into TXT files, 
-    # and above ELF would read from these TXT when running
+                  # which should save test data into TXT files, 
+                  # and above ELF would read from these TXT when running
 ```
 
 ## Transfer to remote
