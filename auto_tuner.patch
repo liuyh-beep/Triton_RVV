@@ -1,3 +1,134 @@
+diff --git a/third_party/cpu/lib/TritonCPUToLLVM/MathToVecLib.cpp b/third_party/cpu/lib/TritonCPUToLLVM/MathToVecLib.cpp
+index aeaddef3..837376df 100755
+--- a/third_party/cpu/lib/TritonCPUToLLVM/MathToVecLib.cpp
++++ b/third_party/cpu/lib/TritonCPUToLLVM/MathToVecLib.cpp
+@@ -101,7 +101,16 @@ public:
+         }
+       }
+     }
+-    if (newShape == shape)
++
++    LDBG("newShape.front():");
++    LDBG(newShape.front());
++    LDBG("newShape.back():");
++    LDBG(newShape.back());
++
++    LDBG("newShape size():"); //-debug-only=ttgpu_to_llvm
++    LDBG(newShape.size());
++
++    if (newShape == shape && (newShape.back() < elemsPerVec || newShape.size() < 2))
+       return failure();
+ 
+     // Convert input operand to the new shape.
+@@ -109,6 +118,12 @@ public:
+     for (auto operand : op->getOperands()) {
+       auto operandTy = cast<VectorType>(operand.getType());
+       auto newOperandTy = VectorType::get(newShape, operandTy.getElementType());
++
++      LDBG("operandTy:");
++      // LDBG(operandTy);
++      LDBG("newOperandTy:");
++      // LDBG(newOperandTy);
++
+       reshapedInputs.push_back(
+           rewriter.create<vector::ShapeCastOp>(loc, newOperandTy, operand));
+     }
+@@ -117,6 +132,7 @@ public:
+     // vectors.
+     auto newOpTy = VectorType::get(newShape, elemTy);
+     auto subResTy = VectorType::get(newShape.back(), elemTy);
++
+     Value newRes = rewriter.create<arith::ConstantOp>(
+         loc, SplatElementsAttr::get(newOpTy, rewriter.getFloatAttr(elemTy, 0)));
+     auto strides = computeStrides(newShape);
+@@ -124,6 +140,7 @@ public:
+     strides.pop_back();
+     for (int64_t idx = 0; idx < numElems; idx += newShape.back()) {
+       auto indices = delinearize(idx, strides);
++
+       SmallVector<Value> subInputs(reshapedInputs.size());
+       std::transform(reshapedInputs.begin(), reshapedInputs.end(),
+                      subInputs.begin(), [&](auto val) {
+@@ -132,11 +149,21 @@ public:
+                      });
+       Value subRes =
+           rewriter.create<OpT>(loc, subResTy, subInputs, op->getAttrs());
++
++      LDBG("subInputs size:");
++      LDBG(subInputs.size());
++      for (size_t i = 0; i < subInputs.size(); ++i) {
++        LDBG("subInputs[" + std::to_string(i) + "]:");
++        LDBG(subInputs[i]);
++      }
++
+       newRes = rewriter.create<vector::InsertOp>(loc, subRes, newRes, indices);
+     }
+ 
+     // Reshape the result back to the original type.
+     rewriter.replaceOpWithNewOp<vector::ShapeCastOp>(op, vecTy, newRes);
++    LDBG("newRes");
++    //LDBG(newRes);
+     return success();
+   }
+ };
+@@ -271,6 +298,9 @@ public:
+ 
+   LogicalResult matchAndRewrite(OpT op, PatternRewriter &rewriter) const {
+     VectorType vecTy = dyn_cast<VectorType>(op.getType());
++
++    LDBG("vecTy.getRank():");
++    LDBG(vecTy.getRank());
+     if (!vecTy || vecTy.getRank() > 1)
+       return failure();
+ 
+@@ -346,7 +376,8 @@ void populatePatternsForOp(RewritePatternSet &patterns,
+ struct MathToVecLibPass
+     : public mlir::triton::cpu::impl::MathToVecLibBase<MathToVecLibPass> {
+   MathToVecLibPass() = default;
+-  size_t vec_size_in_bits;
++  // Default to 128-bit if no features are specified.
++  size_t vec_size_in_bits = 128;
+ 
+   explicit MathToVecLibPass(VecLib lib, std::set<std::string> cpu_features) {
+     this->lib = lib;
+@@ -358,10 +389,15 @@ struct MathToVecLibPass
+     //  Refactor this as an independent function.
+     //  And improve this to support other x86 SIMD ISAs and also for arm SVE
+     //  (VLA)
+-    vec_size_in_bits = 512;
+     for (auto feature : cpu_features) {
+-      // Arm NEON is fixed 128-bit SIMD ISA.
+-      if (feature == "neon") {
++      if (feature == "avx512f") {
++        vec_size_in_bits = std::max<size_t>(vec_size_in_bits, 512);
++      } else if (feature == "avx") {
++        vec_size_in_bits = std::max<size_t>(vec_size_in_bits, 256);
++      } else if (feature == "sse") {
++        vec_size_in_bits = std::max<size_t>(vec_size_in_bits, 128);
++      } else if (feature == "neon") {
++        // Arm NEON is fixed 128-bit SIMD ISA.
+         vec_size_in_bits = 128;
+         break;
+       }
+@@ -374,6 +410,12 @@ struct MathToVecLibPass
+ 
+     RewritePatternSet patterns(context);
+ 
++    if (!cpu_features.empty()) {
++      std::set<std::string> cpu_features_set{cpu_features.begin(),
++                                             cpu_features.end()};
++      update_vec_size(cpu_features_set);
++    }
++
+     switch (lib) {
+     case VecLib::Mvec: {
+       populateCommonPatterns<MvecNameGenerator>(patterns);
+@@ -460,4 +502,4 @@ createMathToVecLibPass(VecLib lib, std::set<std::string> cpu_features) {
+ 
+ } // namespace cpu
+ } // namespace triton
+-} // namespace mlir
++} // namespace mlir
 diff --git a/python/triton/runtime/autotuner.py b/python/triton/runtime/autotuner.py
 index 13890824..7f06a770 100755
 --- a/python/triton/runtime/autotuner.py
