@@ -8,9 +8,9 @@
         "mode": "accuracy",
         "remote": {
             "enable": false,
-            "user": "yuhao",
-            "host": "10.32.44.164",
-            "dir": "/home/yuhao/triton_riscv_test/triton",
+            "user": "xxx",
+            "host": "IP",
+            "dir": "/triton_riscv",
             "_descri": "The dir would be extended to {dir}/auto-tuner",
             "socket": "/tmp/ssh_ctrl_socket"
         }
@@ -24,9 +24,9 @@
         "mode": "accuracy",
         "remote": {
             "enable": false,
-            "user": "yuhao",
-            "host": "10.32.44.164",
-            "dir": "/home/yuhao/triton_riscv_test/triton",
+            "user": "xxx",
+            "host": "IP",
+            "dir": "/triton_riscv",
             "_descri": "The dir would be extended to {dir}/auto-tuner",
             "socket": "/tmp/ssh_ctrl_socket"
         }
@@ -40,9 +40,9 @@
         "mode": "accuracy",
         "remote": {
             "enable": false,
-            "user": "yuhao",
-            "host": "10.32.44.164",
-            "dir": "/home/yuhao/triton_riscv_test/triton",
+            "user": "xxx",
+            "host": "IP",
+            "dir": "/triton_riscv",
             "_descri": "The dir would be extended to {dir}/auto-tuner",
             "socket": "/tmp/ssh_ctrl_socket"
         }
